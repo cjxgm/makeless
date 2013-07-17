@@ -140,25 +140,3 @@ sub ml::older
 	(stat $_[0])[9] < (stat $_[1])[9];
 }
 
-sub ml::ccflags
-{
-	my $flags = '';
-	for (@_) {
-		chomp($flags .= `pkg-config --cflags $_`);
-		$flags =~ s/\s+$//g;
-		$flags .= ' ';
-	}
-	$flags;
-}
-
-sub ml::ldflags
-{
-	my $flags = '';
-	for (@_) {
-		chomp($flags .= `pkg-config --libs $_`);
-		$flags =~ s/\s+$//g;
-		$flags .= ' ';
-	}
-	$flags;
-}
-

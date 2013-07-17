@@ -10,6 +10,35 @@ $ud::ldflags = "-lm";
 $ud::dest = "project";
 $ud::test_arg = "example-argument";
 
+
+
+
+
+sub ud::ccflags
+{
+	my $flags = '';
+	for (@_) {
+		chomp($flags .= `pkg-config --cflags $_`);
+		$flags =~ s/\s+$//g;
+		$flags .= ' ';
+	}
+	$flags;
+}
+
+sub ud::ldflags
+{
+	my $flags = '';
+	for (@_) {
+		chomp($flags .= `pkg-config --libs $_`);
+		$flags =~ s/\s+$//g;
+		$flags .= ' ';
+	}
+	$flags;
+}
+
+
+
+
 (
 	all => {
 		require => [qw[ compile build ]],
