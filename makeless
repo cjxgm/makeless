@@ -1,0 +1,164 @@
+#!/usr/bin/perl -w
+# vim: ft=perl noet ts=4 sw=4 sts=0
+
+# load main config
+{
+	local $/;
+	local @ARGV = qw[ config.ml ];
+	%ml::targets = eval <>;
+	die "\e[1;31mconfig.ml\e[0m: $@" if $@;
+}
+
+# select/find a target to work on
+die 'you must define @ud::targets' unless @ud::targets;
+my $t = $ARGV[0] || $ud::targets[0];
+die "target \"$t\" not found"
+		unless grep{$_ eq $t}@ud::targets and defined$ml::targets{$t};
+
+
+
+
+&ml::target($t);
+print "\e[1;36mdone\e[0m\n";
+
+
+
+
+sub ml::target
+{
+	my ($target) = @_;
+	print "\e[0;33mtarget \e[1;33m$target\e[0m\n";
+	$target = $ml::targets{$target};
+
+	# pre
+	if ($target->{pre}) { &{$target->{pre}} }
+
+	# require
+	for (@{$target->{require}}) { &ml::target($_); }
+
+	# source
+	for (@{$target->{source}}) {
+		if (-d) { &ml::dir ($target, $_) }
+		else    { &ml::file($target, $_) }
+	}
+
+	# append
+	for (@{$target->{append}}) { &ml::target($_); }
+
+	# post
+	if ($target->{post}) { &{$target->{post}} }
+}
+
+sub ml::dir
+{
+	my ($target, $dir) = @_;
+	$dir =~ s{(^/+)|(/+$)}{}g;		# remove leading and trailing slashes.
+
+	print "\e[0;32mprocessing \e[0;35m$dir/\e[0m\n";
+
+	# dir_enter
+	if ($target->{dir_enter}) { &{$target->{dir_enter}}($dir) }
+
+	# dir config
+	my %config;
+	if (-e "$dir/config.ml") {
+		local $/;
+		local @ARGV = ("$dir/config.ml");
+		%config = eval <>;
+		die "\e[1;31m$dir/config.ml\e[0m: $@" if $@;
+	}
+
+	# config enter
+	if ($config{enter}) { &{$config{enter}}($dir) }
+
+	# file
+	for (<$dir/*>) {
+		&ml::file($target, $_) unless -d;
+	}
+
+	# dir
+	for (<$dir/*/>) {
+		s|/$||;
+		&ml::dir($target, $_);
+	}
+
+	# config leave
+	if ($config{leave}) { &{$config{leave}}($dir) }
+
+	# dir_leave
+	if ($target->{dir_leave}) { &{$target->{dir_leave}}($dir) }
+}
+
+sub ml::file
+{
+	my ($target, $file) = @_;
+
+	print "\e[0;32mprocessing \e[1;35m$file";
+
+	# file config
+	my %config;
+	if (-e "$file.ml") {
+		local $/;
+		local @ARGV = ("$file.ml");
+		%config = eval <>;
+		die "\e[1;31m$file.ml\e[0m: $@" if $@;
+	}
+
+	# config enter
+	if ($config{enter}) { &{$config{enter}}($file) }
+
+	# dirty?
+	my $dirty = 1;
+	if ($target->{dirty}) { $dirty = &{$target->{dirty}}($file) }
+	if ($dirty) {
+		print "\e[0m\n";
+		# file
+		if ($target->{file}) { &{$target->{file}}($file) }
+	}
+	else {
+		print " \e[0;30;42m skip \e[0m\n";
+	}
+
+	# config leave
+	if ($config{leave}) { &{$config{leave}}($file) }
+}
+
+
+
+
+sub ml::newer
+{
+	return 0 unless -e $_[0];
+	return 1 unless -e $_[1];
+	(stat $_[0])[9] > (stat $_[1])[9];
+}
+
+sub ml::older
+{
+	return 1 unless -e $_[0];
+	return 0 unless -e $_[1];
+	(stat $_[0])[9] < (stat $_[1])[9];
+}
+
+sub ml::ccflags
+{
+	my $flags = '';
+	for (@_) {
+		chomp($flags .= `pkg-config --cflags $_`);
+		$flags =~ s/\s+$//g;
+		$flags .= ' ';
+	}
+	$flags;
+}
+
+sub ml::ldflags
+{
+	my $flags = '';
+	for (@_) {
+		chomp($flags .= `pkg-config --libs $_`);
+		$flags =~ s/\s+$//g;
+		$flags .= ' ';
+	}
+	$flags;
+}
+
