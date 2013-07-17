@@ -56,7 +56,8 @@ sub ud::ldflags
 	},
 
 	test => {
-		pre => sub {
+		require => [qw[ all ]],
+		post => sub {
 			system "./build/$ud::dest $ud::test_arg";
 		},
 	},
