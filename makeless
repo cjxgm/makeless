@@ -1,0 +1,141 @@
+#!/usr/bin/perl -w
+use strict;
+
+sub main
+{
+	my $db = database::default(raii::db->new("data"));
+	$db->{counter}++;
+	print $db->{test}, " -> ", $db->{counter}, "\n";
+	print $db, "\n";
+}
+
+package database
+{
+	my $defaults = {
+		counter => 0,
+		test => "hello world",
+	};
+
+	sub default
+	{
+		my $db = shift;
+		my $dvals = shift || $defaults;
+		foreach (keys %$dvals) {
+			$db->{$_} = $dvals->{$_} unless exists $db->{$_};
+			&default($db->{$_}, $dvals->{$_}) if ref($db->{$_}) eq 'HASH'
+		}
+		$db;
+	}
+
+	sub reset
+	{
+		my $db = shift;
+		&default($db->reset())
+	}
+}
+
+package raii::file
+{
+	sub new
+	{
+		my $class = shift;
+		my $mode = shift;
+		my $path = shift;
+		open my $file, $mode, $path or return undef;
+		bless $file, $class;
+	}
+
+	sub DESTROY
+	{
+		my $file = shift;
+		close $file;
+	}
+}
+
+package raii::db
+{
+	use Storable qw(fd_retrieve store);
+	use Data::Dumper;
+	use overload '""' => \&stringify;
+
+	sub new
+	{
+		my $class = shift;
+		my $path = shift;
+
+		my $db = _load($path);
+		$db->{_db_config} = { path => $path };
+		bless $db, $class;
+	}
+
+	sub DESTROY
+	{
+		my $db = shift;
+		save($db);
+	}
+
+	sub save
+	{
+		my $db = shift;
+		my $config = $db->{_db_config};
+
+		if ($config->{no_save}) { return }
+
+		delete $db->{_db_config};
+		store($db, $config->{path});
+
+		$db->{_db_config} = $config;
+		$db;
+	}
+
+	sub reset
+	{
+		my $db = shift;
+		my $config = $db->{_db_config};
+
+		%$db = ();
+		$db->{_db_config} = $config;
+		$db;
+	}
+
+	sub reload
+	{
+		my $db = shift;
+		my $config = $db->{_db_config};
+
+		my $new = _load($config->{path});
+		%$db = %$new;
+		$new->{_db_config}->{no_save} = 1;
+
+		$db->{_db_config} = $config;
+		$db;
+	}
+
+	sub stringify
+	{
+		my $db = shift;
+		Data::Dumper->Dump([ $db->_curse() ], [ qw(db) ]);
+	}
+
+	sub _load
+	{
+		my $path = shift;
+		my $file = raii::file->new('<', $path) or return {};
+		fd_retrieve($file);
+	}
+
+	sub _curse
+	{
+		my $db = shift;
+		my $cursed = {%$db};
+		delete $cursed->{_db_config};
+		$cursed;
+	}
+}
+
+
+package main
+{
+	main();
+}
+
