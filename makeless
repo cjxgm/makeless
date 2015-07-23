@@ -4,18 +4,37 @@ use warnings;
 
 sub main
 {
-	my $db = database::default(raii::db->new("data"));
+	my $db_guard = database->guard();
+	my $db = $database::db;
+
 	$db->{counter}++;
+	$db->{debug} = 2;
+	$db->{file} = {
+		time => file::update_time("makeless"),
+		digest => file::digest("makeless"),
+	};
 	print $db->{test}, " -> ", $db->{counter}, "\n";
-	print $db, "\n";
+
+	print $db, "\n" if $db->{debug};
 }
 
 package database
 {
+	our $db;
+
 	my $defaults = {
 		counter => 0,
 		test => "hello world",
+		debug => 0,	# 0: no; 1: dump database; 2: 1 with base64 digest
 	};
+
+	sub guard
+	{
+		$db = database::default(raii::db->new("data"));
+		bless {}, shift;
+	}
+
+	sub DESTROY { undef $db }
 
 	sub default
 	{
@@ -32,6 +51,28 @@ package database
 	{
 		my $db = shift;
 		&default($db->reset())
+	}
+}
+
+package file
+{
+	sub update_time
+	{
+		my $path = shift;
+		(stat $path)[9];
+	}
+
+	sub digest
+	{
+		my $path = shift;
+		if ($database::db->{debug} > 1) {
+			use Digest::file qw(digest_file_base64);
+			digest_file_base64($path, "MD5");
+		}
+		else {
+			use Digest::file qw(digest_file);
+			digest_file($path, "MD5");
+		}
 	}
 }
 
@@ -56,6 +97,7 @@ package raii::db
 	{
 		my $db = shift;
 		$db->save();
+		print "raii::db -> saved.\n";
 	}
 
 	sub save
@@ -115,7 +157,6 @@ package raii::db
 		$db->{$config_key};
 	}
 }
-
 
 package main
 {
