@@ -56,7 +56,9 @@ package raii::db
 {
 	use Storable qw(fd_retrieve store);
 	use Data::Dumper;
-	use overload '""' => \&stringify;
+	$Data::Dumper::Sortkeys = 1;
+
+	my $config_key = 'raii::db::config';
 
 	sub new
 	{
@@ -64,53 +66,39 @@ package raii::db
 		my $path = shift;
 
 		my $db = _load($path);
-		$db->{_db_config} = { path => $path };
-		bless $db, $class;
+		bless($db, $class)->_config({ path => $path });
 	}
 
 	sub DESTROY
 	{
 		my $db = shift;
-		save($db);
+		$db->save();
 	}
 
 	sub save
 	{
 		my $db = shift;
-		my $config = $db->{_db_config};
-
-		if ($config->{no_save}) { return }
-
-		delete $db->{_db_config};
-		store($db, $config->{path});
-
-		$db->{_db_config} = $config;
+		store($db->_curse(), $db->_config('path'));
 		$db;
 	}
 
 	sub reset
 	{
 		my $db = shift;
-		my $config = $db->{_db_config};
-
+		my $config = $db->_config();
 		%$db = ();
-		$db->{_db_config} = $config;
-		$db;
+		$db->_config($config);
 	}
 
 	sub reload
 	{
 		my $db = shift;
-		my $config = $db->{_db_config};
-
-		my $new = _load($config->{path});
-		%$db = %$new;
-		$new->{_db_config}->{no_save} = 1;
-
-		$db->{_db_config} = $config;
-		$db;
+		my $config = $db->_config();
+		%$db = %{ _load($db->_config('path')) };
+		$db->_config($config);
 	}
 
+	use overload '""' => \&stringify;
 	sub stringify
 	{
 		my $db = shift;
@@ -128,8 +116,20 @@ package raii::db
 	{
 		my $db = shift;
 		my $cursed = {%$db};
-		delete $cursed->{_db_config};
+		delete $cursed->{$config_key};
 		$cursed;
+	}
+
+	sub _config
+	{
+		my $db = shift;
+		my $key = shift;
+		if (ref($key) eq 'HASH') {
+			$db->{$config_key} = $key;
+			return $db;
+		}
+		return $db->{$config_key}{$key} if $key;
+		$db->{$config_key};
 	}
 }
 
