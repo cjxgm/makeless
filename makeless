@@ -8,12 +8,14 @@ sub main
 	my $db = $database::db;
 
 	$db->{counter}++;
-	$db->{debug} = 2;
-	$db->{file} = {
-		time => file::update_time("makeless"),
-		digest => file::digest("makeless"),
-	};
+	#$db->{debug} = 0;
+	#database::reset_files();
 	print $db->{test}, " -> ", $db->{counter}, "\n";
+
+	while (my $file = <*>) {
+		my $m = database::file_modified($file);
+		print "\e[1;32m$file\e[0m: ", ($m ? "\e[1;31mMODIFIED" : "\e[0;35msame"), "\e[0m\n";
+	}
 
 	print $db, "\n" if $db->{debug};
 }
@@ -26,11 +28,13 @@ package database
 		counter => 0,
 		test => "hello world",
 		debug => 0,	# 0: no; 1: dump database; 2: 1 with base64 digest
+		files => {},
 	};
 
 	sub guard
 	{
-		$db = database::default(raii::db->new("data"));
+		$db = raii::db->new("data");
+		&default();
 		bless {}, shift;
 	}
 
@@ -38,7 +42,7 @@ package database
 
 	sub default
 	{
-		my $db = shift;
+		my $db = shift || $database::db;
 		my $dvals = shift || $defaults;
 		foreach (keys %$dvals) {
 			$db->{$_} = $dvals->{$_} unless exists $db->{$_};
@@ -47,10 +51,44 @@ package database
 		$db;
 	}
 
-	sub reset
+	sub reset { &default($db->reset()) }
+	sub reset_files { $db->{files} = {} }
+
+	sub file_modified
 	{
-		my $db = shift;
-		&default($db->reset())
+		my $path = shift;
+
+		# file is assumed to be modified if not recorded in the db.
+		# this is for the "first-time" situation.
+		unless (exists $db->{files}{$path}) {
+			$db->{files}{$path} = {
+				digest => file::digest($path),
+				time => file::update_time($path),
+			};
+			return 1;
+		}
+		my $info = $db->{files}{$path};
+
+		# definitely not modified if timestamp unchanged.
+		my $time = $info->{time} || 0;
+		my $ftime = file::update_time($path);
+		return 0 if $ftime == $time;
+		$info->{time} = $ftime;
+
+		# definitely modified if digest changed.
+		# TODO: ignore spaces?
+		my $digest = $info->{digest} || '';
+		my $fdigest = file::digest($path);
+		if ($fdigest ne $digest) {
+			$info->{digest} = $fdigest;
+			return 1;
+		}
+
+		# assume not modified.
+		# TODO: file content comparison to avoid hash collision?
+		#       md5 is pretty good hash function,
+		#       so assume collision won't happen for now.
+		0;
 	}
 }
 
@@ -80,6 +118,9 @@ package raii::db
 {
 	use Storable qw(fd_retrieve store);
 	use Data::Dumper;
+	$Data::Dumper::Indent = 1;
+	$Data::Dumper::Useqq = 1;
+	$Data::Dumper::Quotekeys = 0;
 	$Data::Dumper::Sortkeys = 1;
 
 	my $config_key = 'raii::db::config';
