@@ -34,24 +34,6 @@ package database
 	}
 }
 
-package raii::file
-{
-	sub new
-	{
-		my $class = shift;
-		my $mode = shift;
-		my $path = shift;
-		open my $file, $mode, $path or return undef;
-		bless $file, $class;
-	}
-
-	sub DESTROY
-	{
-		my $file = shift;
-		close $file;
-	}
-}
-
 package raii::db
 {
 	use Storable qw(fd_retrieve store);
@@ -108,7 +90,7 @@ package raii::db
 	sub _load
 	{
 		my $path = shift;
-		my $file = raii::file->new('<', $path) or return {};
+		open my $file, '<', $path or return {};
 		fd_retrieve($file);
 	}
 
