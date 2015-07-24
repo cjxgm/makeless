@@ -15,6 +15,7 @@ sub main
 	while (my $file = <*>) {
 		my $m = database::file_modified($file);
 		print "\e[1;32m$file\e[0m: ", ($m ? "\e[1;31mMODIFIED" : "\e[0;35msame"), "\e[0m\n";
+		database::update_file($file);
 	}
 
 	print $db, "\n" if $db->{debug};
@@ -44,7 +45,7 @@ package database
 	{
 		my $db = shift || $database::db;
 		my $dvals = shift || $defaults;
-		foreach (keys %$dvals) {
+		for (keys %$dvals) {
 			$db->{$_} = $dvals->{$_} unless exists $db->{$_};
 			&default($db->{$_}, $dvals->{$_}) if ref($db->{$_}) eq 'HASH'
 		}
@@ -54,41 +55,54 @@ package database
 	sub reset { &default($db->reset()) }
 	sub reset_files { $db->{files} = {} }
 
+	sub update_file
+	{
+		my $path = shift;
+		$db->{files}{$path} = {
+			digest => file::digest($path),
+			time => file::update_time($path),
+			dependencies => [],	# TODO
+		};
+	}
+
 	sub file_modified
 	{
 		my $path = shift;
 
 		# file is assumed to be modified if not recorded in the db.
 		# this is for the "first-time" situation.
-		unless (exists $db->{files}{$path}) {
-			$db->{files}{$path} = {
-				digest => file::digest($path),
-				time => file::update_time($path),
-			};
-			return 1;
-		}
+		return 1 unless exists $db->{files}{$path};
 		my $info = $db->{files}{$path};
 
 		# definitely not modified if timestamp unchanged.
 		my $time = $info->{time} || 0;
 		my $ftime = file::update_time($path);
 		return 0 if $ftime == $time;
-		$info->{time} = $ftime;
 
 		# definitely modified if digest changed.
 		# TODO: ignore spaces?
 		my $digest = $info->{digest} || '';
 		my $fdigest = file::digest($path);
-		if ($fdigest ne $digest) {
-			$info->{digest} = $fdigest;
-			return 1;
-		}
+		return 1 if $fdigest ne $digest;
 
 		# assume not modified.
 		# TODO: file content comparison to avoid hash collision?
 		#       md5 is pretty good hash function,
 		#       so assume collision won't happen for now.
 		0;
+	}
+
+	sub affection
+	{
+		my $path = shift;
+		my $files = $db->{files};
+		my $a = [];
+		while (my ($file, $info) = each %$files) {
+			for my $dep (@$info->{dependencies}) {
+				push @$a, $file if $path eq $dep;
+			}
+		}
+		$a;
 	}
 }
 
