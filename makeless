@@ -14,13 +14,16 @@ sub main
 	my $db_guard = database->guard();
 	my $db = $database::db;
 
-	# process debug levels
+	# process options
 	my $opt_debug = $options->{debug} || 0;
 	if ($db->{debug} != $opt_debug) {
+		database::reset();
 		$db->{debug} = $opt_debug;
-		database::reset_files();
+		delete $options->{reset};
 	}
+	database::reset() if $options->{reset};
 
+	# main
 	$db->{counter}++;
 	print $db->{test}, " -> ", $db->{counter}, "\n";
 
@@ -33,15 +36,15 @@ sub main
 
 		database::update_file($file) if $file eq 'makeless';
 	}
-
-	print $db, "\n" if $db->{debug};
 }
 
 package options
 {
 	my %available = (
-		'debug|d+' => "enable debugging",
-		'help|h' => "display this help",
+		'reset|r' => "reset the database.",
+		'debug|d+' => "enable debugging. "
+					. "imply --reset when debug options changed from last time.",
+		'help|h' => "display this help.",
 	);
 
 	sub parse
@@ -49,13 +52,44 @@ package options
 		use Getopt::Long qw(:config gnu_getopt);
 
 		my $opts = {};
-		GetOptions($opts, keys %available) or help();
+		GetOptions($opts, keys %available) or help(1);
+		help() if $opts->{help};
+		# TODO: help(1) unless @ARGV;
 		$opts;
 	}
 
 	sub help
 	{
-		die "help: TODO";
+		my $exit_code = shift || 0;
+
+		my @lines;
+		push @lines, "=head1 NAME";
+		push @lines, "";
+		push @lines, "C<makeless>: a config-free C++ build system.";
+		push @lines, "";
+		push @lines, "=head1 OPTIONS";
+		push @lines, "";
+		push @lines, "=over";
+		push @lines, "";
+		for my $k (sort keys %available) {
+			my $item = $k;
+			for ($item) {
+				s{\|}{ | -};
+				s{\+$}{, I<multiple leveled>};
+			}
+			push @lines, "=item --$item";
+			push @lines, "";
+			push @lines, $available{$k};
+			push @lines, "";
+		}
+		push @lines, "=back";
+		push @lines, "";
+
+		use Pod::Text::Color;
+		my $p = Pod::Text::Color->new();
+		$p->parse_lines(@lines, undef);
+
+		exit $exit_code;
 	}
 }
 
@@ -261,7 +295,7 @@ package raii::db
 	{
 		my $db = shift;
 		$db->save();
-		print "raii::db -> saved.\n";
+		print "\n\e[1;37m---- DUMP ----\e[0m\n", $db, "\n" if $db->{debug};
 	}
 
 	sub save
