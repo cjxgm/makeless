@@ -24,9 +24,6 @@ sub main
 	database::reset() if $options->{reset};
 
 	# main
-	$db->{counter}++;
-	print $db->{test}, " -> ", $db->{counter}, "\n";
-
 	while (my $file = <*>) {
 		$file = file::normalize_path($file);
 		die "what the heck? $file disappeared?" unless $file;
