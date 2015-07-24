@@ -2,23 +2,61 @@
 use strict;
 use warnings;
 
+# COMMON ABBREVIATIONS
+#
+# npath    normalized path
+# db       database instance
+#
+
 sub main
 {
+	my $options = options::parse();
 	my $db_guard = database->guard();
 	my $db = $database::db;
 
+	# process debug levels
+	my $opt_debug = $options->{debug} || 0;
+	if ($db->{debug} != $opt_debug) {
+		$db->{debug} = $opt_debug;
+		database::reset_files();
+	}
+
 	$db->{counter}++;
-	#$db->{debug} = 0;
-	#database::reset_files();
 	print $db->{test}, " -> ", $db->{counter}, "\n";
 
 	while (my $file = <*>) {
+		$file = file::normalize_path($file);
+		die "what the heck? $file disappeared?" unless $file;
+
 		my $m = database::file_modified($file);
 		print "\e[1;32m$file\e[0m: ", ($m ? "\e[1;31mMODIFIED" : "\e[0;35msame"), "\e[0m\n";
+
 		database::update_file($file) if $file eq 'makeless';
 	}
 
 	print $db, "\n" if $db->{debug};
+}
+
+package options
+{
+	my %available = (
+		'debug|d+' => "enable debugging",
+		'help|h' => "display this help",
+	);
+
+	sub parse
+	{
+		use Getopt::Long qw(:config gnu_getopt);
+
+		my $opts = {};
+		GetOptions($opts, keys %available) or help();
+		$opts;
+	}
+
+	sub help
+	{
+		die "help: TODO";
+	}
 }
 
 package makeless
@@ -28,6 +66,21 @@ package makeless
 #		my $path = shift;
 #		return unless file_dirty($path);
 #	}
+
+	sub file_dirty
+	{
+		my $npath = shift;
+	}
+
+	sub __is_file_dirty
+	{
+		my $npath = shift;
+	};
+
+	sub __is_module_dirty
+	{
+		my $npath = shift;
+	};
 }
 
 package database
@@ -66,34 +119,34 @@ package database
 
 	sub update_file
 	{
-		my $path = shift;
-		die "is your brain made out of water?" if -d $path;
+		my $npath = shift;
+		die "is your brain made out of water?" if -d $npath;
 
-		$db->{files}{$path} = {
-			digest => file::digest($path),
-			time => file::update_time($path),
+		$db->{files}{$npath} = {
+			digest => file::digest($npath),
+			time => file::update_time($npath),
 			dependencies => [],	# TODO
 		};
 	}
 
 	sub file_modified
 	{
-		my $path = shift;
+		my $npath = shift;
 
 		# file is assumed to be modified if not recorded in the db.
 		# this is for the "first-time" situation.
-		return 1 unless exists $db->{files}{$path};
-		my $info = $db->{files}{$path};
+		return 1 unless exists $db->{files}{$npath};
+		my $info = $db->{files}{$npath};
 
 		# definitely not modified if timestamp unchanged.
 		my $time = $info->{time} || 0;
-		my $ftime = file::update_time($path);
+		my $ftime = file::update_time($npath);
 		return 0 if $ftime == $time;
 
 		# definitely modified if digest changed.
 		# TODO: ignore spaces?
 		my $digest = $info->{digest} || '';
-		my $fdigest = file::digest($path);
+		my $fdigest = file::digest($npath);
 		return 1 if $fdigest ne $digest;
 
 		# assume not modified.
@@ -107,12 +160,12 @@ package database
 	# construct affections from dependencies lists
 	sub affections
 	{
-		my $path = shift;
+		my $npath = shift;
 		my $files = $db->{files};
 		my $a = [];
 		while (my ($file, $info) = each %$files) {
 			for my $dep (@$info->{dependencies}) {
-				push @$a, $file if $path eq $dep;
+				push @$a, $file if $npath eq $dep;
 			}
 		}
 		$a;
@@ -123,20 +176,20 @@ package file
 {
 	sub update_time
 	{
-		my $path = shift;
-		(stat $path)[9];
+		my $npath = shift;
+		(stat $npath)[9];
 	}
 
 	sub digest
 	{
-		my $path = shift;
+		my $npath = shift;
 		if ($database::db->{debug} > 1) {
 			use Digest::file qw(digest_file_base64);
-			digest_file_base64($path, "MD5");
+			digest_file_base64($npath, "MD5");
 		}
 		else {
 			use Digest::file qw(digest_file);
-			digest_file($path, "MD5");
+			digest_file($npath, "MD5");
 		}
 	}
 
@@ -162,6 +215,26 @@ package file
 		use File::Spec::Functions qw(abs2rel);
 		abs2rel($path);
 	}
+
+	sub module_from_path
+	{
+		for my $npath (shift) {
+			die "$npath: not a c++ module" unless m{^(.*)\.(cc|hh)$};
+			return $1;
+		}
+	}
+
+	sub _module_file
+	{
+		my $module = shift;
+		my $suffix = shift;
+		my $npath = $module . "." . $suffix;
+		return unless -e $npath;
+		$npath;
+	}
+
+	sub module_header { _module_file(shift, 'hh') }
+	sub module_source { _module_file(shift, 'cc') }
 }
 
 package raii::db
