@@ -15,10 +15,19 @@ sub main
 	while (my $file = <*>) {
 		my $m = database::file_modified($file);
 		print "\e[1;32m$file\e[0m: ", ($m ? "\e[1;31mMODIFIED" : "\e[0;35msame"), "\e[0m\n";
-		database::update_file($file);
+		database::update_file($file) if $file eq 'makeless';
 	}
 
 	print $db, "\n" if $db->{debug};
+}
+
+package makeless
+{
+#	sub build
+#	{
+#		my $path = shift;
+#		return unless file_dirty($path);
+#	}
 }
 
 package database
@@ -58,6 +67,8 @@ package database
 	sub update_file
 	{
 		my $path = shift;
+		die "is your brain made out of water?" if -d $path;
+
 		$db->{files}{$path} = {
 			digest => file::digest($path),
 			time => file::update_time($path),
@@ -92,7 +103,9 @@ package database
 		0;
 	}
 
-	sub affection
+	# >> a depends on b, then b affects a.
+	# construct affections from dependencies lists
+	sub affections
 	{
 		my $path = shift;
 		my $files = $db->{files};
@@ -126,6 +139,29 @@ package file
 			digest_file($path, "MD5");
 		}
 	}
+
+	# normalize a relative path to another relative path (relative to cwd)
+	# that is consistent enough for comparison and identify same file.
+	#
+	# examples:
+	#   ./a/b/../c/ => a/c
+	#   ../a/b/../../../c => ../../c
+	#   ../makeless/a => a              # if current directory is     called "makeless"
+	#   ../makeless/a => ../makeless/a  # if current directory is NOT called "makeless"
+	#
+	# this function does physically walking in the filesystem.
+	# return undef if file not exist.
+	sub normalize_path
+	{
+		my $path = shift;
+
+		use Cwd qw(abs_path);
+		$path = abs_path($path);
+		return unless defined $path;
+
+		use File::Spec::Functions qw(abs2rel);
+		abs2rel($path);
+	}
 }
 
 package raii::db
@@ -137,7 +173,7 @@ package raii::db
 	$Data::Dumper::Quotekeys = 0;
 	$Data::Dumper::Sortkeys = 1;
 
-	my $config_key = 'raii::db::config';
+	my $config_key = '__raii::db::config';
 
 	sub new
 	{
