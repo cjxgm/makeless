@@ -17,22 +17,21 @@ sub main
 	# process options
 	my $opt_debug = $options->{debug} || 0;
 	if ($db->{debug} != $opt_debug) {
-		database::reset();
+		database::reset_files();
 		$db->{debug} = $opt_debug;
 		delete $options->{reset};
 	}
 	database::reset() if $options->{reset};
 
 	# main
-	while (my $file = <*>) {
-		$file = file::normalize_path($file);
+	if (!@ARGV && !$db->{last_file}) { options::help(); }
+	for (@ARGV) {
+		my $file = file::normalize_path($_);
 		die "what the heck? $file disappeared?" unless $file;
-
-		my $m = database::file_modified($file);
-		print "\e[1;32m$file\e[0m: ", ($m ? "\e[1;31mMODIFIED" : "\e[0;35msame"), "\e[0m\n";
-
-		database::update_file($file) if $file eq 'makeless';
+		makeless::build($file);
+		$db->{last_file} = $file;
 	}
+	makeless::build($db->{last_file}) unless @ARGV;
 }
 
 package options
@@ -40,7 +39,7 @@ package options
 	my %available = (
 		'reset|r' => "reset the database.",
 		'debug|d+' => "enable debugging. "
-					. "imply --reset when debug options changed from last time.",
+					. "will reset files when debug options changed from last time.",
 		'help|h' => "display this help.",
 	);
 
@@ -92,11 +91,15 @@ package options
 
 package makeless
 {
-#	sub build
-#	{
-#		my $path = shift;
-#		return unless file_dirty($path);
-#	}
+	sub build
+	{
+		my $npath = shift;
+		my $m = database::file_modified($npath);
+		print "\e[1;32m$npath\e[0m: ", ($m ? "\e[1;31mMODIFIED" : "\e[0;35msame"), "\e[0m\n";
+		database::update_file($npath) if $m;
+
+		#return unless file_dirty($path);
+	}
 
 	sub file_dirty
 	{
@@ -119,10 +122,9 @@ package database
 	our $db;
 
 	my $defaults = {
-		counter => 0,
-		test => "hello world",
 		debug => 0,	# 0: no; 1: dump database; 2: 1 with base64 digest
 		files => {},
+		cc => "clang++",
 	};
 
 	sub guard
@@ -200,6 +202,14 @@ package database
 			}
 		}
 		$a;
+	}
+
+	# fetch dependencies from compiler
+	sub _dependencies
+	{
+		my $path = shift;
+		my $cc = $db->{cc};
+		my @args = ('-MM', $path);
 	}
 }
 
