@@ -106,12 +106,12 @@ package makeless
 	sub __is_file_dirty
 	{
 		my $npath = shift;
-	};
+	}
 
 	sub __is_module_dirty
 	{
 		my $npath = shift;
-	};
+	}
 }
 
 package database
