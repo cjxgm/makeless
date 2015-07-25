@@ -158,7 +158,7 @@ package database
 		$db->{files}{$npath} = {
 			digest => file::digest($npath),
 			time => file::update_time($npath),
-			dependencies => [],	# TODO
+			dependencies => _dependencies($npath),
 		};
 	}
 
@@ -210,6 +210,22 @@ package database
 		my $path = shift;
 		my $cc = $db->{cc};
 		my @args = ('-MM', $path);
+
+		use IPC::Open2;
+		my $out;
+		my $pid = open2($out, undef, $cc, @args);
+		my %modules;
+		while (<$out>) {
+			chomp;
+			s{: }{ };
+			s{\s*\\\s*$}{}g;
+			my @files = split /\s+/;
+			$modules{file::module_from_path($_)} = 1 for (@files);
+		}
+		waitpid $pid, 0;
+		die "$path: cannot obtain dependencies." if $?;
+		my @deps = sort keys %modules;
+		return \@deps;
 	}
 }
 
@@ -260,7 +276,7 @@ package file
 	sub module_from_path
 	{
 		for my $npath (shift) {
-			die "$npath: not a c++ module" unless m{^(.*)\.(cc|hh)$};
+			die "$npath: not a c++ module" unless m{^(.*)\.(cc|hh|o)$};
 			return $1;
 		}
 	}
