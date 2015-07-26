@@ -1,9 +1,9 @@
-= makeless: config-free build system for c++ and linux
+= `makeless`: config-free `C++` build system
 
-You don't configure anything. Just let the build system to figure out.
+You don't configure anything. Just let the build system figure it out.
 It Just Works™.
 
 `makeless` is a simple build system with decent defaults to make simple
-things simpler, and hard thing harder. It's for building `c++14` executables
-on linux.
+things simpler and hard thing harder. It's for building `C++14` executables
+on Linux.
 
