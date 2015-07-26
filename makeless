@@ -61,7 +61,7 @@ package options
 		my @lines;
 		push @lines, "=head1 NAME";
 		push @lines, "";
-		push @lines, "C<makeless>: a config-free C++ build system.";
+		push @lines, "C<makeless>: config-free C++ build system";
 		push @lines, "";
 		push @lines, "=head1 OPTIONS";
 		push @lines, "";
