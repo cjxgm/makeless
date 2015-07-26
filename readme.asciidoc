@@ -1,4 +1,4 @@
-= a simple config-less build system for c++ and linux
+= makeless: config-free build system for c++ and linux
 
 You don't configure anything. Just let the build system to figure out.
 It Just Works™.
