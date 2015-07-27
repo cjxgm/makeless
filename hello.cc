@@ -3,7 +3,7 @@
 
 int bar()
 {
-	return 3;
+	return pi<int>;
 }
 
 int main()

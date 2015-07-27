@@ -15,13 +15,15 @@ sub main
 	my $db = $database::db;
 
 	# process options
+	if ($options->{reset}) {
+		database::reset();
+		exit;
+	}
 	my $opt_debug = $options->{debug} || 0;
 	if ($db->{debug} != $opt_debug) {
 		database::reset_files();
 		$db->{debug} = $opt_debug;
-		delete $options->{reset};
 	}
-	database::reset() if $options->{reset};
 
 	# main
 	if (!@ARGV && !$db->{last_file}) { options::help(); }
@@ -94,26 +96,13 @@ package makeless
 	sub build
 	{
 		my $npath = shift;
-		my $m = database::file_modified($npath);
-		print "\e[1;32m$npath\e[0m: ", ($m ? "\e[1;31mMODIFIED" : "\e[0;35msame"), "\e[0m\n";
-		database::update_file($npath) if $m;
-
-		#return unless file_dirty($path);
-	}
-
-	sub file_dirty
-	{
-		my $npath = shift;
-	}
-
-	sub __is_file_dirty
-	{
-		my $npath = shift;
-	}
-
-	sub __is_module_dirty
-	{
-		my $npath = shift;
+		my $files = database::dirty_files($npath);
+		for my $file (sort keys %$files) {
+			my $dirty = $files->{$file};
+			print "\e[1;32m$file\e[0m: ",
+				($dirty ? "\e[1;31mDIRTY" : "\e[0;35msame"), "\e[0m ",
+				($dirty < 0 ? "header" : "source"), "\n";
+		}
 	}
 }
 
@@ -124,6 +113,7 @@ package database
 	my $defaults = {
 		debug => 0,	# 0: no; 1: dump database; 2: 1 with base64 digest
 		files => {},
+		depss => {},
 		cc => "clang++",
 	};
 
@@ -154,12 +144,17 @@ package database
 	{
 		my $npath = shift;
 		die "is your brain made out of water?" if -d $npath;
-
 		$db->{files}{$npath} = {
 			digest => file::digest($npath),
 			time => file::update_time($npath),
-			dependencies => _dependencies($npath),
 		};
+	}
+
+	sub update_deps
+	{
+		my $npath = shift;
+		die "is your brain made out of water?" if -d $npath;
+		$db->{depss}{$npath} = _dependencies($npath);
 	}
 
 	sub file_modified
@@ -189,19 +184,28 @@ package database
 		0;
 	}
 
-	# >> a depends on b, then b affects a.
-	# construct affections from dependencies lists
-	sub affections
+	sub dirty_files
 	{
 		my $npath = shift;
-		my $files = $db->{files};
-		my $a = [];
-		while (my ($file, $info) = each %$files) {
-			for my $dep (@$info->{dependencies}) {
-				push @$a, $file if $npath eq $dep;
-			}
+		my $pending = shift || {};
+
+		return if exists $pending->{$npath};
+		$pending->{$npath} = 0;
+
+		my $is_header = file::is_header($npath);
+		if (database::file_modified($npath)) {
+			database::update_deps($npath) unless $is_header;
+			$pending->{$npath} = ($is_header ? -1 : 1);
 		}
-		$a;
+		return if $is_header;
+
+		for (@{$db->{depss}{$npath}}) {
+			my $dep = file::header_to_source($_) || $_;
+			dirty_files($dep, $pending);
+			$pending->{$npath} ||= $pending->{$dep};
+		}
+
+		$pending;
 	}
 
 	# fetch dependencies from compiler
@@ -214,17 +218,19 @@ package database
 		use IPC::Open2;
 		my $out;
 		my $pid = open2($out, undef, $cc, @args);
-		my %modules;
-		while (<$out>) {
+		my @deps;
+		for (<$out>) {
 			chomp;
-			s{: }{ };
 			s{\s*\\\s*$}{}g;
-			my @files = split /\s+/;
-			$modules{file::module_from_path($_)} = 1 for (@files);
+			while ($_ =~ m{(\\.|[^\\\s])+}g) {
+				my $path = $&;
+				$path =~ s{\\(.)}{$1}g;
+				push @deps, file::normalize_path($path);
+			}
 		}
 		waitpid $pid, 0;
 		die "$path: cannot obtain dependencies." if $?;
-		my @deps = sort keys %modules;
+		@deps = @deps[2 .. $#deps];
 		return \@deps;
 	}
 }
@@ -273,25 +279,27 @@ package file
 		abs2rel($path);
 	}
 
-	sub module_from_path
+	sub source_to_object
 	{
-		for my $npath (shift) {
-			die "$npath: not a c++ module" unless m{^(.*)\.(cc|hh|o)$};
-			return $1;
-		}
+		my $path = shift;
+		return undef unless $path =~ s{\.cc$}{.o};
+		$path;
 	}
 
-	sub _module_file
+	sub is_header
 	{
-		my $module = shift;
-		my $suffix = shift;
-		my $npath = $module . "." . $suffix;
-		return unless -e $npath;
-		$npath;
+		my $path = shift;
+		return unless $path =~ m{\.(hh|inl)$};
+		$path;
 	}
 
-	sub module_header { _module_file(shift, 'hh') }
-	sub module_source { _module_file(shift, 'cc') }
+	sub header_to_source
+	{
+		my $path = shift;
+		return unless $path =~ s{\.(hh|inl)$}{.cc};
+		return unless -e $path;
+		$path;
+	}
 }
 
 package raii::db
