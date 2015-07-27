@@ -1,0 +1,78 @@
+trigger = hello.cc
+hello.o: hello.cc hello.hh world.hh
+world.o: world.cc world.hh hello.hh
+
+hello.cc -> hello.o:... rule -> world.hh -> world.cc exist -> world.o: rule
+
+# target, dependency = find_deps(source)
+
+build_object('hello.cc'):
+	objname = 'hello.o'
+	if !dirty(objname) return;
+	compile('hello.cc')
+
+_dirty_list(obj, pending):
+	return if exists(pending[obj])
+	pending[obj] = false
+
+	if modified(obj):
+		update_deps(obj)
+		pending[obj] = true
+
+	for dep <- deps[obj]:
+		dirty_list(dep, pending);
+		pending[obj] ||= pending[dep];
+
+build(obj)
+	pending = {}
+	_dirty_list(obj, pending)
+	relink = false
+	for ob, dirty <- pending:
+		if dirty:
+			compile(ob)
+			update_file(ob)
+			relink = true
+	if relink:
+		link(keys pending)
+
+
+
+build(objname, pending):
+	if exists(pending[objname]):
+		return pending[objname]
+
+	dirty = false
+	if modified(objname):
+		update_deps(objname)
+		dirty = true
+
+	for dep <- deps(objname):
+		pending[objname] = dirty
+		dirty ||= build(dep)
+	delete pending[objname]
+
+	if dirty:
+		compile(objname)
+		update_file(objname);
+	
+	return dirty
+
+
+build(objname):
+	dirty = false;
+	if modified(objname):
+		update_deps(objname)
+		dirty = true;
+
+	bool dirty = false;
+	for dep <- deps(objname):
+		dirty |= build(dep)
+	if dirty: compile(objname)
+
+
+dirty_files(file, files):
+	files = files || {};
+	if modified(file) files->{file} = true;
+	for f <- file.dependencies: dirty_files(f, files);
+	return files;
+
