@@ -52,9 +52,9 @@ package makeless
 		my $dirty = $database::db->{dirty};
 
 		# dirty status of all sources and headers
-		my %files;
-		@files{keys %{database::mark_dirty($_)}} = undef for @$triggers;
-		my @files = sort keys %files;
+		my %pending;
+		@pending{keys %{database::mark_dirty($_, \%pending)}} = () for @$triggers;
+		my @files = sort keys %pending;
 
 		# dirty status of output
 		$dirty->{$output} = undef if %$dirty;
@@ -190,7 +190,7 @@ package database
 		my $pending = shift || {};
 		my $dirty = $db->{dirty};
 
-		return if exists $pending->{$npath};
+		return $pending if exists $pending->{$npath};
 		$pending->{$npath} = undef;
 
 		# header
