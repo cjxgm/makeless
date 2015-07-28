@@ -3,11 +3,12 @@
 build(src):
 	mark_dirty(src)
 	build_dirty(src)
+	dirty = {}
 
 mark_dirty(src):
 	if modified(src):
 		update_file(src)
-		update_deps(src)
+		update_deps(src) unless is_header(src)
 		dirty[src] = true
 
 	if modified(obj):
