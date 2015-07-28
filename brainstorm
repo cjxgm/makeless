@@ -1,3 +1,15 @@
+known bug:
+
+1 recompilation bug:
+
+	assume all file compiled correctly.
+	modify one file so that it wont compile, invoke makeless
+	modify the file back to its original, invoke makeless
+
+	expect: no output (no compilation).
+	reality: makeless recompiled the modified(-backed) file.
+
+
 ###########################################################################
 
 build(src):
