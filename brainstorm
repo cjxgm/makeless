@@ -1,3 +1,44 @@
+###########################################################################
+
+build(src):
+	mark_dirty(src)
+	build_dirty(src)
+
+mark_dirty(src):
+	if modified(src):
+		update_file(src)
+		update_deps(src)
+		dirty[src] = true
+
+	if modified(obj):
+		update_file(obj) if -e obj;
+		dirty[src] = true
+
+	for dep <- deps(src):
+		mark_dirty(dep)
+		dirty[src] = true if dirty[dep]
+
+build_dirty(src):
+	return unless dirty[src]
+	unless is_header(src):
+		obj = compile(src)
+		update_file(obj)
+	delete dirty[src]
+
+	for dep <- deps(src):
+		build_dirty(dep)
+		dep = header_to_source(dep)
+		next unless dep
+		build_dirty(dep)
+
+
+
+
+
+###########################################################################
+
+
+
 trigger = hello.cc
 hello.o: hello.cc hello.hh world.hh
 world.o: world.cc world.hh hello.hh

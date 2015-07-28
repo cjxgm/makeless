@@ -97,7 +97,10 @@ package makeless
 	{
 		my $npath = shift;
 		my $objs = build_object($npath);
-		print "$_\n" for (sort keys %$objs);
+		for (sort keys %$objs) {
+			database::update_file($_) if $objs->{$_} && database::file_modified($_);
+			print $_, ": ", ($objs->{$_} ? 'header' : 'source'), "\n";
+		}
 #		my $files = database::dirty_files($npath);
 #		for my $file (sort keys %$files) {
 #			my $dirty = $files->{$file};
@@ -113,13 +116,14 @@ package makeless
 		my $pending = shift || {};
 
 		return if exists $pending->{$npath};
-		return unless database::file_dirty($npath);
-
-		compile($npath);
-		database::update_file($npath);
+		if (database::file_dirty($npath)) {
+			compile($npath);
+			database::update_file($npath);
+		}
 
 		$pending->{$npath} = undef;
 		for (@{$database::db->{depss}{$npath}}) {
+			$pending->{$_} = 1;
 			my $dep = file::header_to_source($_);
 			next unless $dep;
 			build_object($dep, $pending);
@@ -130,8 +134,14 @@ package makeless
 
 	sub compile
 	{
-		my $npath = shift;
-		print "compile $npath: TODO", "\n";
+		my $path = shift;
+		my $cc = $database::db->{cc};
+		my $obj = file::source_to_object($path);
+		my @args = ('-std=gnu++14', '-c', '-o', $obj, $path);
+
+		print "compiling $path...\n";
+		system $cc, @args and die "$path: failed to compile.";
+		$obj;
 	}
 
 	sub link
@@ -149,12 +159,14 @@ package database
 		files => {},
 		depss => {},
 		cc => "clang++",
+		time => 0,
 	};
 
 	sub guard
 	{
 		$db = raii::db->new("data");
 		&default();
+		$db->{time}++;
 		bless {}, shift;
 	}
 
@@ -181,6 +193,7 @@ package database
 		$db->{files}{$npath} = {
 			digest => file::digest($npath),
 			modified_time => file::modified_time($npath),
+			update_time => $db->{time},
 		};
 	}
 
@@ -226,9 +239,17 @@ package database
 			return 1;
 		}
 		for my $dep (@{$db->{depss}{$npath}}) {
+			next if update_older($npath, $dep);
 			return 1 if file_modified($dep);
 		}
 		0;
+	}
+
+	sub update_older
+	{
+		my $a = $db->{files}{$_[0]}{update_time};
+		my $b = $db->{files}{$_[1]}{update_time};
+		($a > $b);
 	}
 
 	sub dirty_files
