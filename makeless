@@ -42,9 +42,10 @@ package makeless
 	{
 		my $output = shift;
 		my $triggers = $database::db->{triggers};
-		database::mark_dirty($_) for @$triggers;
+		my @files;
+		push @files, keys %{database::mark_dirty($_)} for @$triggers;
 		print "dirty: $_\n" for (sort keys %{$database::db->{dirty}});
-		database::build_dirty($_) for @$triggers;
+		database::build_dirty(@files);
 		database::reset_dirty();
 	}
 
@@ -196,34 +197,27 @@ package database
 			# source
 			mark_dirty(file::header_to_source($dep), $pending);
 		}
+
+		$pending;
 	}
 
 	sub build_dirty
 	{
-		my $npath = shift || return;
-		my $pending = shift || {};
 		my $dirty = $db->{dirty};
+		for (@_) {
+			next unless exists $dirty->{$_};
 
-		return if exists $pending->{$npath};
-		$pending->{$npath} = undef;
+			# header
+			if (file::is_header($_)) {
+				delete $dirty->{$_};
+				next;
+			}
 
-		# header
-		if (file::is_header($npath)) {
-			delete $dirty->{$npath};
-			return;
+			# source -> object
+			my $obj = makeless::compile($_);
+			update_file($obj);
+			delete $dirty->{$_};
 		}
-
-		# dependencies
-		for my $dep (@{$db->{depss}{$npath}}) {
-			build_dirty($dep, $pending);
-			build_dirty(file::header_to_source($dep), $pending);
-		}
-		return unless exists $dirty->{$npath};
-
-		# source -> object
-		my $obj = makeless::compile($npath);
-		update_file($obj);
-		delete $dirty->{$npath};
 	}
 
 	# fetch dependencies from compiler
