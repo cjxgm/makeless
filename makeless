@@ -26,25 +26,25 @@ sub main
 	}
 
 	# main
-	if (!@ARGV && !$db->{last_file}) { options::help(); }
-	for (@ARGV) {
-		my $file = file::normalize_path($_);
-		die "what the heck? $file disappeared?" unless $file;
-		makeless::build($file);
-		$db->{last_file} = $file;
+	my @files;
+	if (@ARGV) {
+		@files = map { file::normalize_path($_) } @ARGV;
+		$db->{triggers} = \@files;
 	}
-	makeless::build($db->{last_file}) unless @ARGV;
+	elsif (exists $db->{triggers}) {}
+	else { options::help() }
+	makeless::build($options->{output} || '/tmp/makeless-build');
 }
 
 package makeless
 {
 	sub build
 	{
-		my $npath = shift;
-		database::mark_dirty($npath);
+		my $output = shift;
+		my $triggers = $database::db->{triggers};
+		database::mark_dirty($_) for @$triggers;
 		print "dirty: $_\n" for (sort keys %{$database::db->{dirty}});
-
-		database::build_dirty($npath);
+		database::build_dirty($_) for @$triggers;
 		database::reset_dirty();
 	}
 
@@ -207,18 +207,18 @@ package database
 		return if exists $pending->{$npath};
 		$pending->{$npath} = undef;
 
+		# header
+		if (file::is_header($npath)) {
+			delete $dirty->{$npath};
+			return;
+		}
+
 		# dependencies
 		for my $dep (@{$db->{depss}{$npath}}) {
 			build_dirty($dep, $pending);
 			build_dirty(file::header_to_source($dep), $pending);
 		}
 		return unless exists $dirty->{$npath};
-
-		# header
-		if (file::is_header($npath)) {
-			delete $dirty->{$npath};
-			return;
-		}
 
 		# source -> object
 		my $obj = makeless::compile($npath);
@@ -330,6 +330,7 @@ package options
 		'debug|d+' => "Enable debugging. "
 					. "Will reset files (i.e. clear cache) when debug options changed from last time.",
 		'output|o=s' => "Set default output file for B<current> source.",
+		'prefix|p=s' => "B<TODO:> Set build file prefix.",
 	);
 
 	sub parse
