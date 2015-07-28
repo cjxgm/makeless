@@ -87,7 +87,7 @@ package makeless
 	{
 		my $output = shift;
 		my $cc = $database::db->{cc};
-		my @args = ('-o', $output, @_);
+		my @args = ('-std=gnu++14', '-o', $output, @_);
 
 		print "\e[0;32mlinking \e[1;35m$output \e[0;32mfrom \e[0;35m", join(' ', @_), "\e[0m...\n";
 		system $cc, @args and die "\e[0;31m$output: \e[1;31mfailed to link.\e[0m";
@@ -253,7 +253,7 @@ package database
 	{
 		my $path = shift;
 		my $cc = $db->{cc};
-		my @args = ('-MM', $path);
+		my @args = ('-std=gnu++14', '-MM', $path);
 
 		use IPC::Open2;
 		my $out;
