@@ -38,8 +38,9 @@ sub main
 	makeless::build($output);
 
 	return unless $options->{execute};
+	print "\e[0;32mrunning \e[1;35m$output\e[0m...\n";
 	system $output;
-	exit $? >> 8; # TODO: better way to return value from exec?
+	print "\e[0;34mprogram \e[1;35m$output \e[0;34mreturned \e[0m[\e[1;31m", $?>>8, "\e[0m]\n";
 }
 
 package makeless
@@ -61,7 +62,7 @@ package makeless
 
 		return unless %$dirty;
 
-		print "dirty: $_\n" for (sort keys %$dirty);
+		print "\e[0;35mdirty: \e[1;35m$_\e[0m\n" for (sort keys %$dirty);
 		database::build_dirty(@files);
 
 		my @objects = grep defined, map { file::source_to_object($_) } @files;
@@ -77,8 +78,8 @@ package makeless
 		my $obj = file::source_to_object($path);
 		my @args = ('-std=gnu++14', '-c', '-o', $obj, $path);
 
-		print "compiling $path...\n";
-		system $cc, @args and die "$path: failed to compile.";
+		print "\e[0;32mcompiling \e[1;35m$path\e[0m...\n";
+		system $cc, @args and die "\e[0;31m$path: \e[1;31mfailed to compile.\e[0m";
 		$obj;
 	}
 
@@ -88,8 +89,8 @@ package makeless
 		my $cc = $database::db->{cc};
 		my @args = ('-o', $output, @_);
 
-		print "linking $output from ", join(' ', @_), "...\n";
-		system $cc, @args and die "$output: failed to link.";
+		print "\e[0;32mlinking \e[1;35m$output \e[0;32mfrom \e[0;35m", join(' ', @_), "\e[0m...\n";
+		system $cc, @args and die "\e[0;31m$output: \e[1;31mfailed to link.\e[0m";
 		$output;
 	}
 }
@@ -268,7 +269,7 @@ package database
 			}
 		}
 		waitpid $pid, 0;
-		die "$path: cannot obtain dependencies." if $?;
+		die "\e[0;31m$path: \e[1;31mcannot obtain dependencies.\e[0m" if $?;
 		@deps = @deps[2 .. $#deps];
 		return \@deps;
 	}
