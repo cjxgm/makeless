@@ -96,14 +96,48 @@ package makeless
 	sub build
 	{
 		my $npath = shift;
-		my $files = database::dirty_files($npath);
-		for my $file (sort keys %$files) {
-			my $dirty = $files->{$file};
-			print "\e[1;32m$file\e[0m: ",
-				($dirty ? "\e[1;31mDIRTY" : "\e[0;35msame"), "\e[0m ",
-				($dirty < 0 ? "header" : "source"), "\n";
-		}
+		my $objs = build_object($npath);
+		print "$_\n" for (sort keys %$objs);
+#		my $files = database::dirty_files($npath);
+#		for my $file (sort keys %$files) {
+#			my $dirty = $files->{$file};
+#			print "\e[1;32m$file\e[0m: ",
+#				($dirty ? "\e[1;31mDIRTY" : "\e[0;35msame"), "\e[0m ",
+#				($dirty < 0 ? "header" : "source"), "\n";
+#		}
 	}
+
+	sub build_object
+	{
+		my $npath = shift;
+		my $pending = shift || {};
+
+		return if exists $pending->{$npath};
+		return unless database::file_dirty($npath);
+
+		compile($npath);
+		database::update_file($npath);
+
+		$pending->{$npath} = undef;
+		for (@{$database::db->{depss}{$npath}}) {
+			my $dep = file::header_to_source($_);
+			next unless $dep;
+			build_object($dep, $pending);
+		}
+
+		return $pending;
+	}
+
+	sub compile
+	{
+		my $npath = shift;
+		print "compile $npath: TODO", "\n";
+	}
+
+	sub link
+	{
+	}
+
 }
 
 package database
@@ -146,7 +180,7 @@ package database
 		die "is your brain made out of water?" if -d $npath;
 		$db->{files}{$npath} = {
 			digest => file::digest($npath),
-			time => file::update_time($npath),
+			modified_time => file::modified_time($npath),
 		};
 	}
 
@@ -166,9 +200,9 @@ package database
 		return 1 unless exists $db->{files}{$npath};
 		my $info = $db->{files}{$npath};
 
-		# definitely not modified if timestamp unchanged.
-		my $time = $info->{time} || 0;
-		my $ftime = file::update_time($npath);
+		# definitely not modified if modified_time unchanged.
+		my $time = $info->{modified_time} || 0;
+		my $ftime = file::modified_time($npath);
 		return 0 if $ftime == $time;
 
 		# definitely modified if digest changed.
@@ -181,6 +215,19 @@ package database
 		# TODO: file content comparison to avoid hash collision?
 		#       md5 is pretty good hash function,
 		#       so assume collision won't happen for now.
+		0;
+	}
+
+	sub file_dirty
+	{
+		my $npath = shift;
+		if (file_modified($npath)) {
+			update_deps($npath);
+			return 1;
+		}
+		for my $dep (@{$db->{depss}{$npath}}) {
+			return 1 if file_modified($dep);
+		}
 		0;
 	}
 
@@ -237,7 +284,7 @@ package database
 
 package file
 {
-	sub update_time
+	sub modified_time
 	{
 		my $npath = shift;
 		(stat $npath)[9];
