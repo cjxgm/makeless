@@ -25,7 +25,7 @@ sub main
 		$db->{debug} = $opt_debug;
 	}
 
-	# main
+	# process input files
 	my @files;
 	if (@ARGV) {
 		@files = map { file::normalize_path($_) } @ARGV;
@@ -33,7 +33,13 @@ sub main
 	}
 	elsif (exists $db->{triggers}) {}
 	else { options::help() }
-	makeless::build($options->{output} || '/tmp/makeless-build');
+
+	my $output = $options->{output} || '/tmp/makeless-build';
+	makeless::build($output);
+
+	return unless $options->{execute};
+	system $output;
+	exit $? >> 8; # TODO: better way to return value from exec?
 }
 
 package makeless
@@ -346,6 +352,7 @@ package options
 					. "Will reset files (i.e. clear cache) when debug options changed from last time.",
 		'output|o=s' => "Set default output file for B<current> source.",
 		'prefix|p=s' => "B<TODO:> Set build file prefix.",
+		'execute|x' => "Execute the built binary.",
 	);
 
 	sub parse
