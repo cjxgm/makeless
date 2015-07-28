@@ -1,4 +1,4 @@
-known bug:
+known bugs:
 
 1 recompilation bug:
 
@@ -8,6 +8,8 @@ known bug:
 
 	expect: no output (no compilation).
 	reality: makeless recompiled the modified(-backed) file.
+
+2 wont recompile if switch source when the first build success and second build failed in linking.
 
 
 ###########################################################################
