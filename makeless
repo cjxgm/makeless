@@ -42,10 +42,25 @@ package makeless
 	{
 		my $output = shift;
 		my $triggers = $database::db->{triggers};
-		my @files;
-		push @files, keys %{database::mark_dirty($_)} for @$triggers;
-		print "dirty: $_\n" for (sort keys %{$database::db->{dirty}});
+		my $dirty = $database::db->{dirty};
+
+		# dirty status of all sources and headers
+		my %files;
+		@files{keys %{database::mark_dirty($_)}} = undef for @$triggers;
+		my @files = sort keys %files;
+
+		# dirty status of output
+		$dirty->{$output} = undef if %$dirty;
+		$dirty->{$output} = undef if database::file_modified($output);
+
+		return unless %$dirty;
+
+		print "dirty: $_\n" for (sort keys %$dirty);
 		database::build_dirty(@files);
+
+		my @objects = grep defined, map { file::source_to_object($_) } @files;
+		&link($output, @objects);
+		database::update_file($output);
 		database::reset_dirty();
 	}
 
@@ -63,8 +78,14 @@ package makeless
 
 	sub link
 	{
-	}
+		my $output = shift;
+		my $cc = $database::db->{cc};
+		my @args = ('-o', $output, @_);
 
+		print "linking $output from ", join(' ', @_), "...\n";
+		system $cc, @args and die "$output: failed to link.";
+		$output;
+	}
 }
 
 package database
