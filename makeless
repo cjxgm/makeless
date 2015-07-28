@@ -217,7 +217,6 @@ package database
 
 		return if exists $pending->{$npath};
 		$pending->{$npath} = undef;
-		delete $dirty->{$npath};
 
 		# header
 		if (file::is_header($npath)) {
