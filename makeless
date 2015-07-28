@@ -42,9 +42,25 @@ package makeless
 	{
 		my $output = shift;
 		my $triggers = $database::db->{triggers};
-		database::mark_dirty($_) for @$triggers;
-		print "dirty: $_\n" for (sort keys %{$database::db->{dirty}});
-		database::build_dirty($_) for @$triggers;
+		my $dirty = $database::db->{dirty};
+
+		# dirty status of all sources and headers
+		my %files;
+		@files{keys %{database::mark_dirty($_)}} = undef for @$triggers;
+		my @files = sort keys %files;
+
+		# dirty status of output
+		$dirty->{$output} = undef if %$dirty;
+		$dirty->{$output} = undef if database::file_modified($output);
+
+		return unless %$dirty;
+
+		print "dirty: $_\n" for (sort keys %$dirty);
+		database::build_dirty(@files);
+
+		my @objects = grep defined, map { file::source_to_object($_) } @files;
+		&link($output, @objects);
+		database::update_file($output);
 		database::reset_dirty();
 	}
 
@@ -62,8 +78,14 @@ package makeless
 
 	sub link
 	{
-	}
+		my $output = shift;
+		my $cc = $database::db->{cc};
+		my @args = ('-o', $output, @_);
 
+		print "linking $output from ", join(' ', @_), "...\n";
+		system $cc, @args and die "$output: failed to link.";
+		$output;
+	}
 }
 
 package database
@@ -196,34 +218,27 @@ package database
 			# source
 			mark_dirty(file::header_to_source($dep), $pending);
 		}
+
+		$pending;
 	}
 
 	sub build_dirty
 	{
-		my $npath = shift || return;
-		my $pending = shift || {};
 		my $dirty = $db->{dirty};
+		for (@_) {
+			next unless exists $dirty->{$_};
 
-		return if exists $pending->{$npath};
-		$pending->{$npath} = undef;
+			# header
+			if (file::is_header($_)) {
+				delete $dirty->{$_};
+				next;
+			}
 
-		# header
-		if (file::is_header($npath)) {
-			delete $dirty->{$npath};
-			return;
+			# source -> object
+			my $obj = makeless::compile($_);
+			update_file($obj);
+			delete $dirty->{$_};
 		}
-
-		# dependencies
-		for my $dep (@{$db->{depss}{$npath}}) {
-			build_dirty($dep, $pending);
-			build_dirty(file::header_to_source($dep), $pending);
-		}
-		return unless exists $dirty->{$npath};
-
-		# source -> object
-		my $obj = makeless::compile($npath);
-		update_file($obj);
-		delete $dirty->{$npath};
 	}
 
 	# fetch dependencies from compiler
