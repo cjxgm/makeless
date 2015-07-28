@@ -354,6 +354,7 @@ package options
 		'output|o=s' => "Set default output file for B<current> source.",
 		'prefix|p=s' => "B<TODO:> Set build file prefix.",
 		'execute|x' => "Execute the built binary.",
+		'clean|c+' => "B<TODO:> Clean the built.",
 	);
 
 	sub parse
