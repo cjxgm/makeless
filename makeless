@@ -36,61 +36,6 @@ sub main
 	makeless::build($db->{last_file}) unless @ARGV;
 }
 
-package options
-{
-	my %available = (
-		'reset|r' => "reset the database.",
-		'debug|d+' => "enable debugging. "
-					. "will reset files when debug options changed from last time.",
-		'help|h' => "display this help.",
-	);
-
-	sub parse
-	{
-		use Getopt::Long qw(:config gnu_getopt);
-
-		my $opts = {};
-		GetOptions($opts, keys %available) or help(1);
-		help() if $opts->{help};
-		# TODO: help(1) unless @ARGV;
-		$opts;
-	}
-
-	sub help
-	{
-		my $exit_code = shift || 0;
-
-		my @lines;
-		push @lines, "=head1 NAME";
-		push @lines, "";
-		push @lines, "C<makeless>: config-free C++ build system";
-		push @lines, "";
-		push @lines, "=head1 OPTIONS";
-		push @lines, "";
-		push @lines, "=over";
-		push @lines, "";
-		for my $k (sort keys %available) {
-			my $item = $k;
-			for ($item) {
-				s{\|}{ | -};
-				s{\+$}{, I<multiple leveled>};
-			}
-			push @lines, "=item --$item";
-			push @lines, "";
-			push @lines, $available{$k};
-			push @lines, "";
-		}
-		push @lines, "=back";
-		push @lines, "";
-
-		use Pod::Text::Color;
-		my $p = Pod::Text::Color->new();
-		$p->parse_lines(@lines, undef);
-
-		exit $exit_code;
-	}
-}
-
 package makeless
 {
 	sub build
@@ -124,6 +69,7 @@ package makeless
 package database
 {
 	our $db;
+	our $db_path = ".makeless.db";
 
 	my $defaults = {
 		debug => 0,	# 0: no; 1: dump database; 2: 1 with base64 digest
@@ -135,7 +81,7 @@ package database
 
 	sub guard
 	{
-		$db = raii::db->new("data");
+		$db = raii::db->new($db_path);
 		&default();
 		bless {}, shift;
 	}
@@ -373,6 +319,72 @@ package file
 		$path;
 	}
 }
+
+package options
+{
+	my %available = (
+		'help|h' => "Display this help and exit right away.",
+		'reset|r' => "Reset the database, removing all the history cache and settings."
+					. " Then default construct a new database."
+					. " If you want to remove the database, simply remove the file F<$database::db_path>.",
+		'debug|d+' => "Enable debugging. "
+					. "Will reset files (i.e. clear cache) when debug options changed from last time.",
+		'output|o=s' => "Set default output file for B<current> source.",
+	);
+
+	sub parse
+	{
+		use Getopt::Long qw(:config gnu_getopt);
+
+		my $opts = {};
+		GetOptions($opts, keys %available) or help(1);
+		help() if $opts->{help};
+		# TODO: help(1) unless @ARGV;
+		$opts;
+	}
+
+	sub help
+	{
+		my $exit_code = shift || 0;
+
+		my @lines;
+		push @lines, "=head1 NAME";
+		push @lines, "";
+		push @lines, "C<makeless>: config-free C++ build system";
+		push @lines, "";
+		push @lines, "=head1 SYNOPSIS";
+		push @lines, "";
+		push @lines, "B<makeless> [I<OPTIONS>] [F<source-file> [...]]";
+		push @lines, "";
+		push @lines, "B<ml> [I<OPTIONS>] [F<source-file> [...]]";
+		push @lines, "";
+		push @lines, "=head1 OPTIONS";
+		push @lines, "";
+		push @lines, "=over";
+		push @lines, "";
+		for my $k (sort keys %available) {
+			my $item = $k;
+			for ($item) {
+				s{\|}{ | -};
+				s{\+$}{, B<multiple leveled>};
+				s{=s$}{ I<string>} and s{ \|}{=I<string>$&};
+			}
+			push @lines, "=item --$item";
+			push @lines, "";
+			push @lines, $available{$k};
+			push @lines, "";
+		}
+		push @lines, "=back";
+		push @lines, "";
+
+		use Pod::Text::Color;
+		my $p = Pod::Text::Color->new();
+		$p->parse_lines(@lines, undef);
+
+		exit $exit_code;
+	}
+}
+
 
 package raii::db
 {
