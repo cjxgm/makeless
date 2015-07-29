@@ -31,10 +31,19 @@ sub main
 		@files = map { file::normalize_path($_) } @ARGV;
 		$db->{triggers} = \@files;
 	}
-	elsif (exists $db->{triggers}) {}
-	else { options::help() }
+	die "\e[0;31mno triggers: \e[1;31msource-file is required on first run.\e[0m\n" unless exists $db->{triggers};
 
-	my $output = file::normalize_path($options->{output} || '/tmp/makeless-build');
+	my $default_output = '/tmp/makeless-build';
+	if (defined $options->{"output-from-trigger"}) {
+		my $t = $options->{"output-from-trigger"} - 1;
+		my $triggers = $db->{triggers};
+		my $nt = $#$triggers;
+		die "\e[0;31m$t > $nt: \e[1;31mno enough triggers.\e[0m" if $t > $nt;
+		my $p = file::source_to_binary($triggers->[$t]);
+		die "WTF?" unless $p;
+		$default_output = $p;
+	}
+	my $output = file::normalize_path($options->{output} || $default_output);
 	makeless::build($output);
 
 	return unless $options->{execute};
@@ -387,6 +396,13 @@ package file
 	{
 		my $path = shift;
 		return undef unless $path =~ s{\.cc$}{.o};
+		$path;
+	}
+
+	sub source_to_binary
+	{
+		my $path = shift;
+		return undef unless $path =~ s{\.cc$}{};
 		$path;
 	}
 
