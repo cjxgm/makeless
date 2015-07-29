@@ -38,9 +38,7 @@ sub main
 	makeless::build($output);
 
 	return unless $options->{execute};
-	print "\e[0;32mrunning \e[1;35m$output\e[0m...\n";
-	system $output;
-	print "\e[0;34mprogram \e[1;35m$output \e[0;34mreturned \e[0m[\e[1;31m", $?>>8, "\e[0m]\n";
+	makeless::execute($output);
 }
 
 package makeless
@@ -99,6 +97,19 @@ package makeless
 		print "\e[0;32mlinking \e[1;35m$output \e[0;32mfrom \e[0;35m", join(' ', @_), "\e[0m...\n";
 		system $cc, @args and die "\e[0;31m$output: \e[1;31mfailed to link.\e[0m";
 		$output;
+	}
+
+	sub execute
+	{
+		my $path = shift;
+		my $rpath = file::real_path($path);
+
+		print "\e[0;32mrunning \e[1;35m$path\e[0m...\n";
+		system $rpath;
+
+		die "\e[0;31m$path: \e[1;31mfailed to execute: \e[0;31m$!\e[0m" if $? == -1;
+		die "\e[0;31m$path: \e[1;31mdied with signal \e[0m[\e[1;31m" . ($? & 0b0111_1111) . "\e[0m]" . ($? & 0b1000_0000 ? " \e[0;33mcoredumped" : '') . "\e[0m" if $? & 0b0111_1111;
+		print "\e[0;34mprogram \e[1;35m$path \e[0;34mreturned \e[0m[\e[1;31m", $? >> 8, "\e[0m]\n";
 	}
 }
 
@@ -358,13 +369,18 @@ package file
 	{
 		my $path = shift;
 
-		use Cwd qw(abs_path);
-		my $apath = abs_path($path);
-		return undef unless defined $apath;
-		return $apath if $path =~ m{^/};
+		my $rpath = real_path($path);
+		return undef unless defined $rpath;
+		return $rpath if $path =~ m{^/};
 
 		use File::Spec::Functions qw(abs2rel);
-		abs2rel($apath);
+		abs2rel($rpath);
+	}
+
+	sub real_path
+	{
+		use Cwd qw(abs_path);
+		abs_path(shift);
 	}
 
 	sub source_to_object
