@@ -44,6 +44,7 @@ sub main
 		$default_output = $p;
 	}
 	my $output = file::normalize_path($options->{output} || $default_output);
+	$output .= '.bin' while -d $output;
 	makeless::build($output);
 
 	return unless $options->{execute};
