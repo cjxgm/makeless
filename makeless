@@ -38,7 +38,7 @@ sub main
 		my $t = $options->{"output-from-trigger"} - 1;
 		my $triggers = $db->{triggers};
 		my $nt = $#$triggers;
-		die "\e[0;31m$t > $nt: \e[1;31mno enough triggers.\e[0m" if $t > $nt;
+		die "\e[0;31m$t > $nt: \e[1;31mno enough triggers.\e[0m\n" if $t > $nt;
 		my $p = file::source_to_binary($triggers->[$t]);
 		die "WTF?" unless $p;
 		$default_output = $p;
@@ -93,7 +93,7 @@ package makeless
 		my @args = ('-std=gnu++14', '-c', '-o', $obj, $path);
 
 		print "\e[0;32mcompiling \e[1;35m$path\e[0m...\n";
-		system $cc, @args and die "\e[0;31m$path: \e[1;31mfailed to compile.\e[0m";
+		system $cc, @args and die "\e[0;31m$path: \e[1;31mfailed to compile.\e[0m\n";
 		$obj;
 	}
 
@@ -104,7 +104,7 @@ package makeless
 		my @args = ('-std=gnu++14', '-o', $output, @_);
 
 		print "\e[0;32mlinking \e[1;35m$output \e[0;32mfrom \e[0;35m", join(' ', @_), "\e[0m...\n";
-		system $cc, @args and die "\e[0;31m$output: \e[1;31mfailed to link.\e[0m";
+		system $cc, @args and die "\e[0;31m$output: \e[1;31mfailed to link.\e[0m\n";
 		$output;
 	}
 
@@ -116,8 +116,8 @@ package makeless
 		print "\e[0;32mrunning \e[1;35m$path\e[0m...\n";
 		system $rpath;
 
-		die "\e[0;31m$path: \e[1;31mfailed to execute: \e[0;31m$!\e[0m" if $? == -1;
-		die "\e[0;31m$path: \e[1;31mdied with signal \e[0m[\e[1;31m" . ($? & 0b0111_1111) . "\e[0m]" . ($? & 0b1000_0000 ? " \e[0;33mcoredumped" : '') . "\e[0m" if $? & 0b0111_1111;
+		die "\e[0;31m$path: \e[1;31mfailed to execute: \e[0;31m$!\e[0m\n" if $? == -1;
+		die "\e[0;31m$path: \e[1;31mdied with signal \e[0m[\e[1;31m" . ($? & 0b0111_1111) . "\e[0m]" . ($? & 0b1000_0000 ? " \e[0;33mcoredumped" : '') . "\e[0m\n" if $? & 0b0111_1111;
 		print "\e[0;34mprogram \e[1;35m$path \e[0;34mreturned \e[0m[\e[1;31m", $? >> 8, "\e[0m]\n";
 	}
 }
@@ -327,7 +327,7 @@ package database
 			}
 		}
 		waitpid $pid, 0;
-		die "\e[0;31m$path: \e[1;31mcannot obtain dependencies.\e[0m" if $?;
+		die "\e[0;31m$path: \e[1;31mcannot obtain dependencies.\e[0m\n" if $?;
 		@deps = @deps[2 .. $#deps];
 		return \@deps;
 	}
@@ -445,7 +445,7 @@ package options
 		use Getopt::Long qw(:config gnu_getopt);
 
 		my $opts = {};
-		GetOptions($opts, keys %available) or die "\e[0;31mbad options: \e[1;31muse \e[0;33m-h\e[1;31m to show help.\e[0m";
+		GetOptions($opts, keys %available) or die "\e[0;31mbad options: \e[1;31muse \e[0;33m-h\e[1;31m to show help.\e[0m\n";
 		help() if $opts->{help};
 		$opts;
 	}
