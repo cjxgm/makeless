@@ -445,9 +445,8 @@ package options
 		use Getopt::Long qw(:config gnu_getopt);
 
 		my $opts = {};
-		GetOptions($opts, keys %available) or help(1);
+		GetOptions($opts, keys %available) or die "\e[0;31mbad options: \e[1;31muse \e[0;33m-h\e[1;31m to show help.\e[0m";
 		help() if $opts->{help};
-		# TODO: help(1) unless @ARGV;
 		$opts;
 	}
 
