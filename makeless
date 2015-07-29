@@ -34,7 +34,7 @@ sub main
 	elsif (exists $db->{triggers}) {}
 	else { options::help() }
 
-	my $output = $options->{output} || '/tmp/makeless-build';
+	my $output = file::normalize_path($options->{output} || '/tmp/makeless-build');
 	makeless::build($output);
 
 	return unless $options->{execute};
@@ -152,6 +152,14 @@ package database
 		my $npath = shift;
 		die "is your brain made out of water?" if -d $npath;
 		$db->{depss}{$npath} = _dependencies($npath);
+	}
+
+	sub update_binary_deps
+	{
+		my $bin = shift;
+		my @deps = @_;
+		die "is your brain made out of water?" if -d $bin;
+		$db->{depss}{$bin} = \@deps;
 	}
 
 	sub file_modified
@@ -296,27 +304,32 @@ package file
 		}
 	}
 
-	# normalize a relative path to another relative path (relative to cwd)
-	# that is consistent enough for comparison and identify same file.
+	# Normalize a relative path to another relative path (relative to cwd)
+	# and a absolute path to another absolute path
+	# that is consistent enough for comparison and
+	# identifting the same file (can be used as hash keys).
 	#
-	# examples:
+	# EXAMPLES:
 	#   ./a/b/../c/ => a/c
 	#   ../a/b/../../../c => ../../c
-	#   ../makeless/a => a              # if current directory is     called "makeless"
-	#   ../makeless/a => ../makeless/a  # if current directory is NOT called "makeless"
+	#   ../makeless/a => a              # if cwd is     called "makeless"
+	#   ../makeless/a => ../makeless/a  # if cwd is NOT called "makeless"
 	#
-	# this function does physically walking in the filesystem.
+	# This function does physically walking in the filesystem
+	# and expands symbolic links.
+	#
 	# return undef if file not exist.
 	sub normalize_path
 	{
 		my $path = shift;
 
 		use Cwd qw(abs_path);
-		$path = abs_path($path);
-		return undef unless defined $path;
+		my $apath = abs_path($path);
+		return undef unless defined $apath;
+		return $apath if $path =~ m{^/};
 
 		use File::Spec::Functions qw(abs2rel);
-		abs2rel($path);
+		abs2rel($apath);
 	}
 
 	sub source_to_object
