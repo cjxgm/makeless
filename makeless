@@ -50,6 +50,7 @@ package makeless
 		my $output = shift;
 		my $triggers = $database::db->{triggers};
 		my $dirty = $database::db->{dirty};
+		my $dirty_bin = $database::db->{dirty_bin};
 
 		# find all dirty files
 		# dirty status of all sources and headers
@@ -65,15 +66,15 @@ package makeless
 		# dirty status of the binary
 		my @objects = grep defined, map { file::source_to_object($_) } @files;
 		my $key = database::_stringify_objects($output, @objects);
-		$dirty->{$key} = undef if $bin_dirty;
-		$dirty->{$key} = undef if database::target_modified($output, @objects);
+		$dirty_bin->{$key} = undef if $bin_dirty;
+		$dirty_bin->{$key} = undef if database::target_modified($output, @objects);
 
 		# linking
-		print "\e[0;35mdirty: \e[1;35m$_\e[0m\n" for (sort keys %$dirty);
-		if (exists $dirty->{$key}) {
+		print "\e[0;35mdirty binary: \e[1;35m$_\e[0m\n" for (sort keys %$dirty_bin);
+		if (exists $dirty_bin->{$key}) {
 			&link($output, @objects);
 			database::update_target($output, @objects);
-			delete $dirty->{$key};
+			delete $dirty_bin->{$key};
 		}
 	}
 
@@ -111,6 +112,7 @@ package database
 		files => {},
 		depss => {},
 		dirty => {},
+		dirty_bin => {},
 		targets => {},
 		cc => "clang++",
 	};
@@ -226,6 +228,8 @@ package database
 
 		return $pending if exists $pending->{$npath};
 		$pending->{$npath} = undef;
+
+		delete $dirty->{$npath};
 
 		# header
 		if (file::is_header($npath)) {
