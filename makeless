@@ -51,24 +51,30 @@ package makeless
 		my $triggers = $database::db->{triggers};
 		my $dirty = $database::db->{dirty};
 
+		# find all dirty files
 		# dirty status of all sources and headers
 		my %pending;
 		@pending{keys %{database::mark_dirty($_, \%pending)}} = () for @$triggers;
 		my @files = sort keys %pending;
+		my $bin_dirty = %$dirty;
 
-		# dirty status of output
-		$dirty->{$output} = undef if %$dirty;
-		$dirty->{$output} = undef if database::file_modified($output);
-
-		return unless %$dirty;
-
+		# rebuild them
 		print "\e[0;35mdirty: \e[1;35m$_\e[0m\n" for (sort keys %$dirty);
 		database::build_dirty(@files);
 
+		# dirty status of the binary
 		my @objects = grep defined, map { file::source_to_object($_) } @files;
-		&link($output, @objects);
-		database::update_file($output);
-		database::reset_dirty();
+		my $key = database::_stringify_objects($output, @objects);
+		$dirty->{$key} = undef if $bin_dirty;
+		$dirty->{$key} = undef if database::target_modified($output, @objects);
+
+		# linking
+		print "\e[0;35mdirty: \e[1;35m$_\e[0m\n" for (sort keys %$dirty);
+		if (exists $dirty->{$key}) {
+			&link($output, @objects);
+			database::update_target($output, @objects);
+			delete $dirty->{$key};
+		}
 	}
 
 	sub compile
@@ -105,6 +111,7 @@ package database
 		files => {},
 		depss => {},
 		dirty => {},
+		targets => {},
 		cc => "clang++",
 	};
 
@@ -136,15 +143,14 @@ package database
 	{
 		my $npath = shift;
 		die "is your brain made out of water?" if -d $npath;
+
 		if (-e $npath) {
 			$db->{files}{$npath} = {
 				digest => file::digest($npath),
 				modified_time => file::modified_time($npath),
 			};
 		}
-		else {
-			delete $db->{files}{$npath};
-		}
+		else { delete $db->{files}{$npath} }
 	}
 
 	sub update_deps
@@ -154,25 +160,45 @@ package database
 		$db->{depss}{$npath} = _dependencies($npath);
 	}
 
-	sub update_binary_deps
+	sub update_target
 	{
-		my $bin = shift;
-		my @deps = @_;
-		die "is your brain made out of water?" if -d $bin;
-		$db->{depss}{$bin} = \@deps;
+		my $npath = $_[0];
+		my $key = _stringify_objects(@_);
+		die "is your brain made out of water?" if -d $npath;
+
+		if (-e $npath) {
+			$db->{targets}{$key} = {
+				digest => file::digest($npath),
+				modified_time => file::modified_time($npath),
+				path => $npath,
+			};
+		}
+		else { delete $db->{targets}{$key} }
+	}
+
+	sub target_modified
+	{
+		my $key = _stringify_objects(@_);
+		return 1 unless exists $db->{targets}{$key};
+
+		my $target = $db->{targets}{$key};
+		return file_modified($target->{path}, $target);
 	}
 
 	sub file_modified
 	{
 		my $npath = shift;
+		my $info = shift;
 
 		# file not exist is considered modified
 		return 1 unless -e $npath;
 
-		# file is assumed to be modified if not recorded in the db.
-		# this is for the "first-time" situation.
-		return 1 unless exists $db->{files}{$npath};
-		my $info = $db->{files}{$npath};
+		unless ($info) {
+			# file is assumed to be modified if not recorded in the db.
+			# this is for the "first-time" situation.
+			return 1 unless exists $db->{files}{$npath};
+			$info = $db->{files}{$npath};
+		}
 
 		# definitely not modified if modified_time unchanged.
 		my $time = $info->{modified_time} || 0;
@@ -280,6 +306,11 @@ package database
 		die "\e[0;31m$path: \e[1;31mcannot obtain dependencies.\e[0m" if $?;
 		@deps = @deps[2 .. $#deps];
 		return \@deps;
+	}
+
+	sub _stringify_objects
+	{
+		join(' ', map { s{[\\ ]}{\\$&}g; $_ } @_);
 	}
 }
 
