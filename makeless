@@ -1,6 +1,8 @@
 #!/usr/bin/perl
+use utf8;
 use strict;
 use warnings;
+$" = ' ';
 
 # COMMON ABBREVIATIONS
 #
@@ -31,7 +33,8 @@ sub main
 		@files = map { file::normalize_path($_) } @ARGV;
 		$db->{triggers} = \@files;
 	}
-	die "\e[0;31mno triggers: \e[1;31msource-file is required on first run.\e[0m\n" unless exists $db->{triggers};
+	die "\e[0;31mno triggers: \e[1;31msource-file is required on first run.\e[0m\n"
+		unless exists $db->{triggers};
 
 	my $default_output = '/tmp/makeless-build';
 	if (defined $options->{"output-from-trigger"}) {
@@ -51,6 +54,8 @@ sub main
 	makeless::execute($output);
 }
 
+# everything about directing a build.
+# build, compile, link, and execute.
 package makeless
 {
 	sub build
@@ -60,12 +65,44 @@ package makeless
 		my $dirty = $database::db->{dirty};
 		my $dirty_bin = $database::db->{dirty_bin};
 
+		my @basic_flags;
+		my @tmp_triggers;
+		{
+			my $ss = settings::parse($triggers->[0], '=', qw(std opt run trg));
+
+			my $nstd = @{$ss->{std}};
+			die "\e[0;31m$nstd > 1: \e[1;31mthere can only be at most one standard.\e[0m\n"
+				if $nstd > 1;
+
+			my $nopt = @{$ss->{opt}};
+			die "\e[0;31m$nopt > 1: \e[1;31mthere can only be at most one optimizing level.\e[0m\n"
+				if $nopt > 1;
+
+			@tmp_triggers = @{$ss->{trg}};
+			@basic_flags = (
+				"-std=" . ($ss->{std}[0] || 'gnu++14'),
+				"-O" . ($ss->{opt}[0] || '3'),
+			);
+			$database::db->{basic_flags} = \@basic_flags;
+		}
+
+		my $merge_array = sub { sort keys %{{ map { $_ => undef } @_ }} };
+
 		# find all dirty files
 		# dirty status of all sources and headers
 		my %pending;
-		@pending{keys %{database::mark_dirty($_, \%pending)}} = () for @$triggers;
+		@pending{keys %{database::mark_dirty($_, \%pending)}} = ()
+			for $merge_array->(@$triggers, @tmp_triggers);
 		my @files = sort keys %pending;
 		my $bin_dirty = %$dirty;
+
+		{
+			my $ss = {};
+			settings::merge($ss, $database::db->{files}{$_}{settings}) for @files;
+			settings::merge($ss);
+			$database::db->{cc_flags} = [@basic_flags, @{$ss->{ccf}}];
+			$database::db->{ld_flags} = [@basic_flags, @{$ss->{ldf}}];	# TODO is -std=??? needed in linker flags?
+		}
 
 		# rebuild them
 		print "\e[0;35mdirty: \e[1;35m$_\e[0m\n" for (sort keys %$dirty);
@@ -91,7 +128,7 @@ package makeless
 		my $path = shift;
 		my $cc = $database::db->{cc};
 		my $obj = file::source_to_object($path);
-		my @args = ('-std=gnu++14', '-c', '-o', $obj, $path);
+		my @args = (@{$database::db->{cc_flags}}, '-c', '-o', $obj, $path);
 
 		print "\e[0;32mcompiling \e[1;35m$path\e[0m...\n";
 		system $cc, @args and die "\e[0;31m$path: \e[1;31mfailed to compile.\e[0m\n";
@@ -102,7 +139,7 @@ package makeless
 	{
 		my $output = shift;
 		my $cc = $database::db->{cc};
-		my @args = ('-std=gnu++14', '-o', $output, @_);
+		my @args = (@{$database::db->{ld_flags}}, '-o', $output, @_);
 
 		print "\e[0;32mlinking \e[1;35m$output \e[0;32mfrom \e[0;35m", join(' ', @_), "\e[0m...\n";
 		system $cc, @args and die "\e[0;31m$output: \e[1;31mfailed to link.\e[0m\n";
@@ -118,11 +155,37 @@ package makeless
 		system $rpath;
 
 		die "\e[0;31m$path: \e[1;31mfailed to execute: \e[0;31m$!\e[0m\n" if $? == -1;
-		die "\e[0;31m$path: \e[1;31mdied with signal \e[0m[\e[1;31m" . ($? & 0b0111_1111) . "\e[0m]" . ($? & 0b1000_0000 ? " \e[0;33mcoredumped" : '') . "\e[0m\n" if $? & 0b0111_1111;
+		die "\e[0;31m$path: \e[1;31mdied with signal \e[0m[\e[1;31m"
+			. ($? & 0b0111_1111) . "\e[0m]"
+			. ($? & 0b1000_0000 ? " \e[0;33mcoredumped" : '') . "\e[0m\n"
+			if $? & 0b0111_1111;
 		print "\e[0;34mprogram \e[1;35m$path \e[0;34mreturned \e[0m[\e[1;31m", $? >> 8, "\e[0m]\n";
+	}
+
+	sub pkg_config
+	{
+		my ($type, @libs) = @_;
+		my @args = ("--$type", @libs);
+		my @flags;
+
+		use IPC::Open2;
+		my $pid = open2(my $out, undef, 'pkg-config', @args);
+		for (<$out>) {
+			chomp;
+			while ($_ =~ m{(\\.|[^\\\s])+}g) {
+				my $flag = $&;
+				$flag =~ s{\\(.)}{$1}g;
+				push @flags, $flag;
+			}
+		}
+		waitpid $pid, 0;
+		die "\e[0;31m@_: \e[1;31mfailed to process library for $type.\e[0m\n" if $?;
+
+		@flags;
 	}
 }
 
+# hold an instance of raii::db, and provides various query functions.
 package database
 {
 	our $db;
@@ -168,9 +231,18 @@ package database
 		die "is your brain made out of water?" if -d $npath;
 
 		if (-e $npath) {
+			my $ss = settings::parse($npath, '+=', qw(lib ccf ldf));
+			my $lib = $ss->{lib};
+			if (@$lib) {
+				push @{$ss->{ccf}}, makeless::pkg_config('cflags', @$lib);
+				push @{$ss->{ldf}}, makeless::pkg_config(  'libs', @$lib);
+			}
+			delete $ss->{lib};
+
 			$db->{files}{$npath} = {
 				digest => file::digest($npath),
 				modified_time => file::modified_time($npath),
+				settings => $ss,
 			};
 		}
 		else { delete $db->{files}{$npath} }
@@ -312,11 +384,10 @@ package database
 	{
 		my $path = shift;
 		my $cc = $db->{cc};
-		my @args = ('-std=gnu++14', '-MM', $path);
+		my @args = (@{$db->{basic_flags}}, '-MM', $path);
 
 		use IPC::Open2;
-		my $out;
-		my $pid = open2($out, undef, $cc, @args);
+		my $pid = open2(my $out, undef, $cc, @args);
 		my @deps;
 		for (<$out>) {
 			chomp;
@@ -339,6 +410,7 @@ package database
 	}
 }
 
+# filesystem and file path related functions
 package file
 {
 	sub modified_time
@@ -423,6 +495,56 @@ package file
 	}
 }
 
+# magic comment in source code and headers that can alter the
+# flags of compiler and/or linker
+package settings
+{
+	sub parse
+	{
+		my ($path, $symbol, @keys) = @_;
+		my %result = map { $_ => {} } @keys;
+
+		open my $file, '<', $path or die "$path: $!";
+		for (<$file>) {
+			next unless m{//\s+ml:(\w+)\s*\Q$symbol\E\s*(.*)};
+
+			die "\e[0;31m$path: \e[1;31msetting \e[0;33m$1\e[1;31m is not one of (\e[0;33m"
+				. join(' ', @keys)
+				. "\e[1;31m).\e[0m\n"
+				unless exists $result{$1};
+
+			@{$result{$1}}{@{_split_escaped($2)}} = undef;
+		}
+
+		$_ = [ _array_from_set($_) ] for values %result;
+		\%result;
+	}
+
+	sub merge
+	{
+		my ($dst, $src) = @_;
+
+		if (defined $src) { @{$dst->{$_}}{@{$src->{$_}}} = undef for keys %$src }
+		else { $_ = [ _array_from_set($_) ] for values %$dst }
+		$dst;
+	}
+
+	sub _split_escaped
+	{
+		local $_ = shift;
+		local @_;
+		push @_, $& while $_ =~ m{(\\.|[^\\\s])+}g;
+		s{\\(.)}{$1}g for @_;
+		\@_;
+	}
+
+	sub _array_from_set
+	{
+		sort keys %{$_[0]};
+	}
+}
+
+# command line arguments
 package options
 {
 	my %available = (
@@ -439,6 +561,7 @@ package options
 		'lines|n=i' => "B<TODO:> Catch error message and show only first n lines. Set this to 0 will disable this feature.",
 		'output-from-trigger|t+' => "Deduce default output filename from triggers (i.e. F<source-file>)."
 					. " Repeat I<n> times to use the I<n>th trigger.",
+		'show-settings|s' => "B<TODO:> Show the parsed settings before compiling.",
 	);
 
 	sub parse
