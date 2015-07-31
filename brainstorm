@@ -2,6 +2,89 @@ known bugs:
 
 ###########################################################################
 
+option: command line arguments
+setting: magic comments in code that change compiler/linker flags
+
+###########################################################################
+
+how to provide flags?
+
+std		first-trigger
+opt		per-file
+flg		aggregate-all-file?
+lib		aggregate-all-file
+run		first-trigger
+trg		first-trigger
+
+global setting (from first trigger)
+local override (from each file)
+aggregate (gather from all files)
+
+std  : hello	default
+std  = hello	local override
+std += hello	aggregate
+std => hello	global (only in trigger, only first one is valid)
+
+setting		:=+>
+----------------------
+std			first-trigger
+opt			first-trigger
+run			first-trigger
+trg			first-trigger
+flg			aggregate
+lib			aggregate
+
+package settings;
+s = parse(triggers[0], qw(std opt run trg))
+
+a = {}
+aggregate(a, npath1, qw(flg lib))
+aggregate(a, npath2, qw(flg lib))
+aggregate(a, npath3, qw(flg lib))
+a = aggregate(a)
+
+void _unescape(s || $_);
+void _escape(s || $_);
+void _parse(s, path, symbol, qw(keys));
+
+### aggregation:
++= a b\ c d
++= a b c\ d
+will result in:
+a
+b
+b c
+c
+c d
+d
+
+1. split:
++=
+a
+b\ c
+d
++=
+a
+b
+c\ d
+
+2. merge as set
++=
+a
+b\ c
+d
+b
+c\ d
+
+3. unescape
+a
+b c
+d
+b
+c d
+
+###########################################################################
+
 build(src):
 	mark_dirty(src)
 	build_dirty(src)
