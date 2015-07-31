@@ -45,7 +45,7 @@ a = aggregate(a)
 
 void _unescape(s || $_);
 void _escape(s || $_);
-void _parse(s, path, symbol, qw(keys));
+void _parse(symbol, s, path, qw(keys));
 
 ### aggregation:
 += a b\ c d

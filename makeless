@@ -1,4 +1,5 @@
 #!/usr/bin/perl
+use utf8;
 use strict;
 use warnings;
 
@@ -59,6 +60,10 @@ package makeless
 		my $triggers = $database::db->{triggers};
 		my $dirty = $database::db->{dirty};
 		my $dirty_bin = $database::db->{dirty_bin};
+
+		my $ss = settings::parse($triggers->[0], qw(std opt run trg));
+		use Data::Dumper 'Dumper';
+		die Dumper($ss);	# FIXME
 
 		# find all dirty files
 		# dirty status of all sources and headers
@@ -420,6 +425,61 @@ package file
 		return undef unless $path =~ s{\.(hh|inl)$}{.cc};
 		return undef unless -e $path;
 		$path;
+	}
+}
+
+package settings
+{
+	sub parse
+	{
+		my $result = {};
+		_aggregate('=', $result, @_);
+		_aggregate_done($result);
+	}
+
+	sub aggregate
+	{
+		return _aggregate_done($_[0]) if defined wantarray;
+		_aggregate('+=', @_);
+	}
+
+	sub _aggregate
+	{
+		my ($symbol, $result, $path, @keys) = @_;
+		@$result{@keys} = {};
+
+		open my $file, '<', $path or die "$path: $!";
+		for (<$file>) {
+			next unless m{//\s+ml:(\w+)\s*\Q$symbol\E\s*(.*)};
+
+			die "\e[0;33m$1 \e[0;31mnot one of (\e[0;33m"
+				. join(' ', @keys)
+				. "\e[0;31m): \e[1;31munexpected setting.\e[0m\n"
+				unless exists $result->{$1};
+
+			@{$result->{$1}}{@{_split_escaped($2)}} = undef;
+		}
+	}
+
+	sub _aggregate_done
+	{
+		local $_ = shift;
+		$_ = _array_from_set($_) for values %$_;
+		$_;
+	}
+
+	sub _split_escaped
+	{
+		local $_ = shift;
+		local @_;
+		push @_, $& while $_ =~ m{(\\.|[^\\\s])+}g;
+		s{\\(.)}{$1}g for @_;
+		\@_;
+	}
+
+	sub _array_from_set
+	{
+		[ sort keys %{$_[0]} ];
 	}
 }
 
