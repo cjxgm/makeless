@@ -561,6 +561,7 @@ package options
 		'lines|n=i' => "B<TODO:> Catch error message and show only first n lines. Set this to 0 will disable this feature.",
 		'output-from-trigger|t+' => "Deduce default output filename from triggers (i.e. F<source-file>)."
 					. " Repeat I<n> times to use the I<n>th trigger.",
+		'show-settings|s' => "B<TODO:> Show the parsed settings before compiling.",
 	);
 
 	sub parse
