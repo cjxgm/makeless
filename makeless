@@ -78,7 +78,7 @@ package makeless
 			die "\e[0;31m$nopt > 1: \e[1;31mthere can only be at most one optimizing level.\e[0m\n"
 				if $nopt > 1;
 
-			@tmp_triggers = @{$ss->{trg}};
+			@tmp_triggers = map { file::normalize_path($_) } @{$ss->{trg}};
 			@basic_flags = (
 				"-std=" . ($ss->{std}[0] || 'gnu++14'),
 				"-O" . ($ss->{opt}[0] || '3'),
