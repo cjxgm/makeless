@@ -50,7 +50,7 @@ sub main
 	$output .= '.bin' while -d $output;
 	makeless::build($output);
 
-	return unless $options->{execute};
+	return if $options->{'no-execute'};
 	makeless::execute($output);
 }
 
@@ -556,7 +556,7 @@ package options
 					. "Will reset files (i.e. clear cache) when debug options changed from last time.",
 		'output|o=s' => "Set default output file for B<current> source.",
 		'prefix|p=s' => "B<TODO:> Set build file prefix.",
-		'execute|x' => "Execute the built binary.",
+		'no-execute|x' => "Do not execute the built binary.",
 		'clean|c+' => "B<TODO:> Clean the built.",
 		'lines|n=i' => "B<TODO:> Catch error message and show only first n lines. Set this to 0 will disable this feature.",
 		'output-from-trigger|t+' => "Deduce default output filename from triggers (i.e. F<source-file>)."
@@ -614,19 +614,19 @@ package options
 		push @lines, "";
 		push @lines, "=item B<ml> F<source.cc>";
 		push @lines, "";
-		push @lines, "Build F<source.cc> to F</tmp/makeless-build> (default output filename).";
+		push @lines, "Build F<source.cc> to F</tmp/makeless-build> (default output filename) and execute it.";
 		push @lines, "";
 		push @lines, "=item B<ml> I<-t> F<source.cc>";
 		push @lines, "";
-		push @lines, "Build F<source.cc> to F<source> (output filename deduced from the 1st trigger, a.k.a. F<source-file>, i.e. F<source.cc>).";
+		push @lines, "Build F<source.cc> to F<source> (output filename deduced from the 1st trigger, a.k.a. F<source-file>, i.e. F<source.cc>) and execute it.";
 		push @lines, "";
 		push @lines, "=item B<ml> I<-x> F<source.cc>";
 		push @lines, "";
-		push @lines, "Build F<source.cc> to F</tmp/makeless-build> and execute it.";
+		push @lines, "Build F<source.cc> to F</tmp/makeless-build> but do not execute it.";
 		push @lines, "";
 		push @lines, "=item B<ml> I<-tx> F<source.cc>";
 		push @lines, "";
-		push @lines, "Build F<source.cc> to F<source> and execute it.";
+		push @lines, "Build F<source.cc> to F<source> but do not execute it.";
 		push @lines, "";
 		push @lines, "=back";
 		push @lines, "";
