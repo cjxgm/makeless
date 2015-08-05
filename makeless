@@ -50,7 +50,7 @@ sub main
 	$output .= '.bin' while -d $output;
 	makeless::build($output);
 
-	return unless $options->{execute};
+	return if $options->{'no-execute'};
 	makeless::execute($output);
 }
 
@@ -221,7 +221,7 @@ package database
 		$db;
 	}
 
-	sub reset { &default($db->reset()) }
+	sub reset { $db->reset() }
 	sub reset_files { $db->{files} = {} }
 	sub reset_dirty { $db->{dirty} = {} }
 
@@ -549,14 +549,13 @@ package options
 {
 	my %available = (
 		'help|h' => "Display this help and exit right away.",
-		'reset|r' => "Reset the database, removing all the history cache and settings."
-					. " Then default construct a new database."
-					. " If you want to remove the database, simply remove the file F<$database::db_path>.",
+		'reset|r' => "Reset the database and exit, removing all the history cache and settings."
+					. " The database file F<$database::db_path> will be removed.",
 		'debug|d+' => "Enable debugging. "
 					. "Will reset files (i.e. clear cache) when debug options changed from last time.",
 		'output|o=s' => "Set default output file for B<current> source.",
 		'prefix|p=s' => "B<TODO:> Set build file prefix.",
-		'execute|x' => "Execute the built binary.",
+		'no-execute|x' => "Do not execute the built binary.",
 		'clean|c+' => "B<TODO:> Clean the built.",
 		'lines|n=i' => "B<TODO:> Catch error message and show only first n lines. Set this to 0 will disable this feature.",
 		'output-from-trigger|t+' => "Deduce default output filename from triggers (i.e. F<source-file>)."
@@ -614,19 +613,19 @@ package options
 		push @lines, "";
 		push @lines, "=item B<ml> F<source.cc>";
 		push @lines, "";
-		push @lines, "Build F<source.cc> to F</tmp/makeless-build> (default output filename).";
+		push @lines, "Build F<source.cc> to F</tmp/makeless-build> (default output filename) and execute it.";
 		push @lines, "";
 		push @lines, "=item B<ml> I<-t> F<source.cc>";
 		push @lines, "";
-		push @lines, "Build F<source.cc> to F<source> (output filename deduced from the 1st trigger, a.k.a. F<source-file>, i.e. F<source.cc>).";
+		push @lines, "Build F<source.cc> to F<source> (output filename deduced from the 1st trigger, a.k.a. F<source-file>, i.e. F<source.cc>) and execute it.";
 		push @lines, "";
 		push @lines, "=item B<ml> I<-x> F<source.cc>";
 		push @lines, "";
-		push @lines, "Build F<source.cc> to F</tmp/makeless-build> and execute it.";
+		push @lines, "Build F<source.cc> to F</tmp/makeless-build> but do not execute it.";
 		push @lines, "";
 		push @lines, "=item B<ml> I<-tx> F<source.cc>";
 		push @lines, "";
-		push @lines, "Build F<source.cc> to F<source> and execute it.";
+		push @lines, "Build F<source.cc> to F<source> but do not execute it.";
 		push @lines, "";
 		push @lines, "=back";
 		push @lines, "";
@@ -663,6 +662,7 @@ package raii::db
 	sub DESTROY
 	{
 		my $db = shift;
+		return $db->_remove() if $db->_config('reset');
 		$db->save();
 		print "\n\e[1;37m---- DUMP ----\e[0m\n", $db, "\n" if $db->{debug};
 	}
@@ -678,8 +678,7 @@ package raii::db
 	{
 		my $db = shift;
 		my $config = $db->_config();
-		%$db = ();
-		$db->_config($config);
+		$config->{reset} = 1;
 	}
 
 	sub reload
@@ -722,6 +721,14 @@ package raii::db
 		}
 		return $db->{$config_key}{$key} if $key;
 		$db->{$config_key};
+	}
+
+	sub _remove
+	{
+		my $db = shift;
+		my $path = $db->_config('path');
+		print "\e[0;34mdatabase \e[0;35m$path\e[0;34m is reset.\e[0m\n"
+			if unlink $path;
 	}
 }
 
