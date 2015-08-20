@@ -560,9 +560,9 @@ package options
 		'lines|n=i' => "B<TODO:> Catch error message and show only first n lines. Set this to 0 will disable this feature.",
 		'output-from-trigger|t+' => "Deduce default output filename from triggers (i.e. F<source-file>)."
 					. " Repeat I<n> times to use the I<n>th trigger.",
-		'show-settings|s' => "B<TODO:> Show the parsed settings before compiling.",
-		'shared-library|l' => "B<TODO:> Link to shared object/library instead of executable.",
-		'project|j' => "B<FIXME:> Not very clear what I should do with this.",
+		'show-settings|S' => "B<TODO:> Show the parsed settings before compiling.",
+		'shared-library|s' => "B<TODO:> Link to shared object/library instead of executable.",
+		'project|P' => "B<FIXME:> Not very clear what I should do with this.",
 	);
 
 	sub parse
