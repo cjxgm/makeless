@@ -556,7 +556,9 @@ package options
 		'output|o=s' => "Set default output file for B<current> source.",
 		'prefix|p=s' => "B<TODO:> Set build file prefix.",
 		'no-execute|x' => "Do not execute the built binary.",
-		'clean|c+' => "B<TODO:> Clean the built.",
+		'clean|c+' => "Clean the built."
+					. " B<Level 1> clean all the object files;"
+					. " B<Level 2> removes the linked binary as well.",
 		'lines|n=i' => "B<TODO:> Catch error message and show only first n lines. Set this to 0 will disable this feature.",
 		'output-from-trigger|t+' => "Deduce default output filename from triggers (i.e. F<source-file>)."
 					. " Repeat I<n> times to use the I<n>th trigger.",
