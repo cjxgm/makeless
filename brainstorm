@@ -2,6 +2,12 @@ known bugs:
 
 ###########################################################################
 
+TODO:
+* all the TODO and FIXME from help
+* separate .makeless.db and .makeless.cache
+
+###########################################################################
+
 option: command line arguments
 setting: magic comments in code that change compiler/linker flags
 
