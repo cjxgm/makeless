@@ -573,7 +573,7 @@ package file
 	sub remove
 	{
 		my ($path) = @_;
-		return $path if -d $path;
+		die "TODO: remove empty dir" if -d $path;
 		unlink $path;
 	}
 
