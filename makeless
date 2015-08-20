@@ -613,8 +613,8 @@ package options
 		'no-execute|x' => "Do not execute the built binary.",
 		'clean|c+' => "Clean the built."
 					. " B<Level 1> cleans all the object files;"
-					. " B<Level 3> skips no file;"
-					. " B<Level 2> removes the linked binary as well.",
+					. " B<Level 2> skips no file;"
+					. " B<Level 3> removes the linked binary as well.",
 		'lines|n=i' => "B<TODO:> Catch error message and show only first n lines. Set this to 0 will disable this feature.",
 		'output-from-trigger|t+' => "Deduce default output filename from triggers (i.e. F<source-file>)."
 					. " Repeat I<n> times to use the I<n>th trigger.",
@@ -686,6 +686,10 @@ package options
 		push @lines, "=item B<ml> I<-tx> F<source.cc>";
 		push @lines, "";
 		push @lines, "Build F<source.cc> to F<source> but do not execute it.";
+		push @lines, "";
+		push @lines, "=item B<ml> I<-cccr>";
+		push @lines, "";
+		push @lines, "Clean everything up. Removes all object files, linked binaries/targets and makeless database F<$database::db_path>.";
 		push @lines, "";
 		push @lines, "=back";
 		push @lines, "";
