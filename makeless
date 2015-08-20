@@ -562,6 +562,7 @@ package options
 					. " Repeat I<n> times to use the I<n>th trigger.",
 		'show-settings|s' => "B<TODO:> Show the parsed settings before compiling.",
 		'shared-library|l' => "B<TODO:> Link to shared object/library instead of executable.",
+		'project|j' => "B<FIXME:> Not very clear what I should do with this.",
 	);
 
 	sub parse
