@@ -561,6 +561,7 @@ package options
 		'output-from-trigger|t+' => "Deduce default output filename from triggers (i.e. F<source-file>)."
 					. " Repeat I<n> times to use the I<n>th trigger.",
 		'show-settings|s' => "B<TODO:> Show the parsed settings before compiling.",
+		'shared-library|l' => "B<TODO:> Link to shared object/library instead of executable.",
 	);
 
 	sub parse
