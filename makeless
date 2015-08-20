@@ -16,6 +16,9 @@ sub main
 	my $db_guard = database->guard();
 	my $db = $database::db;
 
+	# clean up
+	makeless::clean($options->{clean}) if $options->{clean};
+
 	# process options
 	if ($options->{reset}) {
 		database::reset();
@@ -26,6 +29,7 @@ sub main
 		database::reset_files();
 		$db->{debug} = $opt_debug;
 	}
+	exit if $options->{clean};
 
 	# process input files
 	my @files;
@@ -36,6 +40,17 @@ sub main
 	die "\e[0;31mno triggers: \e[1;31msource-file is required on first run.\e[0m\n"
 		unless exists $db->{triggers};
 
+	# setup default prefix
+	$db->{prefix} = $options->{prefix} if $options->{prefix};
+	unless ($db->{prefix}) {
+		my $prefix = "/tmp/build";
+		$prefix .= ".tmp" while -e $prefix && not -d $prefix;
+		$db->{prefix} = $prefix;
+	}
+	file::mkdir_or_die($db->{prefix});
+	$db->{prefix} = file::normalize_path($db->{prefix});
+
+	# setup output path
 	my $default_output = '/tmp/makeless-build';
 	if (defined $options->{"output-from-trigger"}) {
 		my $t = $options->{"output-from-trigger"} - 1;
@@ -48,6 +63,7 @@ sub main
 	}
 	my $output = file::normalize_path($options->{output} || $default_output);
 	$output .= '.bin' while -d $output;
+
 	makeless::build($output);
 
 	return if $options->{'no-execute'};
@@ -182,6 +198,37 @@ package makeless
 		die "\e[0;31m@_: \e[1;31mfailed to process library for $type.\e[0m\n" if $?;
 
 		@flags;
+	}
+
+	sub clean
+	{
+		my ($level) = @_;
+
+		# clean objects
+		for my $path (sort keys %{$database::db->{files}}) {
+			next unless file::is_object($path);
+
+			if ($level < 2 && database::file_modified($path)) {
+				print "\e[0;35mskipping \e[1;35m$path\e[0m...\n";
+				next;
+			}
+
+			print "\e[0;32mremoving \e[1;35m$path\e[0m...\n";
+			file::remove_or_die($path);
+			database::update_file($path);
+		}
+
+		return if $level < 3;
+
+		# clean targets
+		for (sort keys %{$database::db->{targets}}) {
+			my $path = $database::db->{targets}{$_}{path};
+			if (-e $path) {
+				print "\e[0;32mremoving \e[1;35m$path\e[0m...\n";
+				file::remove_or_die($path);
+			}
+			delete $database::db->{targets}{$_};
+		}
 	}
 }
 
@@ -432,6 +479,22 @@ package file
 		}
 	}
 
+	sub mkdir
+	{
+		my ($path) = @_;
+
+		use File::Path qw(make_path);
+		make_path($path, { error => \my $err });
+		return $path unless @$err;
+		undef;
+	}
+
+	sub mkdir_or_die
+	{
+		my ($path) = @_;
+		file::mkdir($path) or die "\e[0;31m$path \e[1;31mfailed to mkdir for prefix: \e[0;31m$!\e[0m\n";
+	}
+
 	# Normalize a relative path to another relative path (relative to cwd)
 	# and a absolute path to another absolute path
 	# that is consistent enough for comparison and
@@ -467,9 +530,13 @@ package file
 
 	sub source_to_object
 	{
+		use File::Basename qw(dirname);
+
 		my $path = shift;
 		return undef unless $path =~ s{\.cc$}{.o};
-		$path;
+		$path = "$database::db->{prefix}/$path";
+		file::mkdir_or_die(dirname($path));
+		normalize_path($path);
 	}
 
 	sub source_to_binary
@@ -486,12 +553,32 @@ package file
 		$path;
 	}
 
+	sub is_object
+	{
+		my $path = shift;
+		return undef unless $path =~ m{\.o$};
+		$path;
+	}
+
 	sub header_to_source
 	{
 		my $path = shift;
 		return undef unless $path =~ s{\.(hh|inl)$}{.cc};
 		return undef unless -e $path;
 		$path;
+	}
+
+	sub remove
+	{
+		my ($path) = @_;
+		return $path if -d $path;
+		unlink $path;
+	}
+
+	sub remove_or_die
+	{
+		my ($path) = @_;
+		file::remove($path) or die "\e[0;31m$path: \e[1;31mfailed to remove \e[0;31m$!\e[0m\n";
 	}
 }
 
@@ -554,9 +641,12 @@ package options
 		'debug|d+' => "Enable debugging."
 					. " Will reset files (i.e. clear cache) when debug options changed from last time.",
 		'output|o=s' => "Set default output file for B<current> source.",
-		'prefix|p=s' => "B<TODO:> Set build file prefix.",
+		'prefix|p=s' => "Set build file prefix.",
 		'no-execute|x' => "Do not execute the built binary.",
-		'clean|c+' => "B<TODO:> Clean the built.",
+		'clean|c+' => "Clean the built."
+					. " B<Level 1> cleans all the object files;"
+					. " B<Level 2> skips no file;"
+					. " B<Level 3> removes the linked binary as well.",
 		'lines|n=i' => "B<TODO:> Catch error message and show only first n lines. Set this to 0 will disable this feature.",
 		'output-from-trigger|t+' => "Deduce default output filename from triggers (i.e. F<source-file>)."
 					. " Repeat I<n> times to use the I<n>th trigger.",
@@ -628,6 +718,10 @@ package options
 		push @lines, "=item B<ml> I<-tx> F<source.cc>";
 		push @lines, "";
 		push @lines, "Build F<source.cc> to F<source> but do not execute it.";
+		push @lines, "";
+		push @lines, "=item B<ml> I<-cccr>";
+		push @lines, "";
+		push @lines, "Clean everything up. Removes all object files, linked binaries/targets and makeless database F<$database::db_path>.";
 		push @lines, "";
 		push @lines, "=back";
 		push @lines, "";
