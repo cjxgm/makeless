@@ -16,6 +16,9 @@ sub main
 	my $db_guard = database->guard();
 	my $db = $database::db;
 
+	# clean up
+	makeless::clean($options->{clean}) if $options->{clean};
+
 	# process options
 	if ($options->{reset}) {
 		database::reset();
@@ -26,6 +29,7 @@ sub main
 		database::reset_files();
 		$db->{debug} = $opt_debug;
 	}
+	exit if $options->{clean};
 
 	# process input files
 	my @files;
@@ -182,6 +186,23 @@ package makeless
 		die "\e[0;31m@_: \e[1;31mfailed to process library for $type.\e[0m\n" if $?;
 
 		@flags;
+	}
+
+	sub clean
+	{
+		for (sort keys %{$database::db->{files}}) {
+			next unless file::is_object($_);
+
+			if (database::file_modified($_)) {
+				print "\e[0;35mskipping \e[1;35m$_\e[0m...\n";
+				next;
+			}
+
+			print "\e[0;32mremoving \e[1;35m$_\e[0m...\n";
+			file::remove_or_die($_);
+			database::update_file($_);
+		}
+		print "\e[0;34mcleaned up\e[0m\n";
 	}
 }
 
@@ -486,12 +507,32 @@ package file
 		$path;
 	}
 
+	sub is_object
+	{
+		my $path = shift;
+		return undef unless $path =~ m{\.o$};
+		$path;
+	}
+
 	sub header_to_source
 	{
 		my $path = shift;
 		return undef unless $path =~ s{\.(hh|inl)$}{.cc};
 		return undef unless -e $path;
 		$path;
+	}
+
+	sub remove
+	{
+		my ($path) = @_;
+		die "TODO: remove dir" if -d $path;
+		unlink $path;
+	}
+
+	sub remove_or_die
+	{
+		my ($path) = @_;
+		file::remove($path) or die "\e[0;31m$path: \e[1;31mfailed to remove \e[0;31m$!\e[0m\n";
 	}
 }
 
