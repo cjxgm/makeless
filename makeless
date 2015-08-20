@@ -209,8 +209,9 @@ package database
 		# set default prefix
 		unless ($db->{prefix}) {
 			my $prefix = "/tmp/build";
-			$prefix .= ".tmp" while -e $prefix;
+			$prefix .= ".tmp" while -e $prefix && not -d $prefix;
 			$db->{prefix} = $prefix;
+			file::mkdir_or_die($prefix);
 		}
 
 		bless {}, shift;
@@ -438,6 +439,22 @@ package file
 			use Digest::file qw(digest_file);
 			digest_file($npath, "MD5");
 		}
+	}
+
+	sub mkdir
+	{
+		my ($path) = @_;
+
+		use File::Path qw(make_path);
+		make_path($path, { error => \my $err });
+		return $path unless @$err;
+		undef;
+	}
+
+	sub mkdir_or_die
+	{
+		my ($path) = @_;
+		file::mkdir($path) or die "\e[0;31m$path \e[1;31mfailed to mkdir for prefix: \e[0;31m$!\e[0m\n";
 	}
 
 	# Normalize a relative path to another relative path (relative to cwd)
