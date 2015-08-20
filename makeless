@@ -190,10 +190,12 @@ package makeless
 
 	sub clean
 	{
+		my ($level) = @_;
+
 		for (sort keys %{$database::db->{files}}) {
 			next unless file::is_object($_);
 
-			if (database::file_modified($_)) {
+			if ($level < 3 && database::file_modified($_)) {
 				print "\e[0;35mskipping \e[1;35m$_\e[0m...\n";
 				next;
 			}
@@ -202,7 +204,6 @@ package makeless
 			file::remove_or_die($_);
 			database::update_file($_);
 		}
-		print "\e[0;34mcleaned up\e[0m\n";
 	}
 }
 
@@ -598,8 +599,9 @@ package options
 		'prefix|p=s' => "B<TODO:> Set build file prefix.",
 		'no-execute|x' => "Do not execute the built binary.",
 		'clean|c+' => "Clean the built."
-					. " B<Level 1> clean all the object files;"
-					. " B<Level 2> removes the linked binary as well.",
+					. " B<Level 1> cleans all the object files;"
+					. " B<Level 2> removes the linked binary as well;"
+					. " B<Level 3> skips no file.",
 		'lines|n=i' => "B<TODO:> Catch error message and show only first n lines. Set this to 0 will disable this feature.",
 		'output-from-trigger|t+' => "Deduce default output filename from triggers (i.e. F<source-file>)."
 					. " Repeat I<n> times to use the I<n>th trigger.",
