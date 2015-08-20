@@ -36,6 +36,16 @@ sub main
 	die "\e[0;31mno triggers: \e[1;31msource-file is required on first run.\e[0m\n"
 		unless exists $db->{triggers};
 
+	# setup default prefix
+	$db->{prefix} = $options->{prefix} if $options->{prefix};
+	unless ($db->{prefix}) {
+		my $prefix = "/tmp/build";
+		$prefix .= ".tmp" while -e $prefix && not -d $prefix;
+		$db->{prefix} = $prefix;
+	}
+	file::mkdir_or_die($db->{prefix});
+
+	# setup output path
 	my $default_output = '/tmp/makeless-build';
 	if (defined $options->{"output-from-trigger"}) {
 		my $t = $options->{"output-from-trigger"} - 1;
@@ -48,6 +58,7 @@ sub main
 	}
 	my $output = file::normalize_path($options->{output} || $default_output);
 	$output .= '.bin' while -d $output;
+
 	makeless::build($output);
 
 	return if $options->{'no-execute'};
@@ -205,15 +216,6 @@ package database
 	{
 		$db = raii::db->new($db_path);
 		&default();
-
-		# set default prefix
-		unless ($db->{prefix}) {
-			my $prefix = "/tmp/build";
-			$prefix .= ".tmp" while -e $prefix && not -d $prefix;
-			$db->{prefix} = $prefix;
-			file::mkdir_or_die($prefix);
-		}
-
 		bless {}, shift;
 	}
 
