@@ -205,6 +205,14 @@ package database
 	{
 		$db = raii::db->new($db_path);
 		&default();
+
+		# set default prefix
+		unless ($db->{prefix}) {
+			my $prefix = "/tmp/build";
+			$prefix .= ".tmp" while -e $prefix;
+			$db->{prefix} = $prefix;
+		}
+
 		bless {}, shift;
 	}
 
@@ -554,7 +562,7 @@ package options
 		'debug|d+' => "Enable debugging. "
 					. "Will reset files (i.e. clear cache) when debug options changed from last time.",
 		'output|o=s' => "Set default output file for B<current> source.",
-		'prefix|p=s' => "B<TODO:> Set build file prefix.",
+		'prefix|p=s' => "Set build file prefix.",
 		'no-execute|x' => "Do not execute the built binary.",
 		'clean|c+' => "B<TODO:> Clean the built.",
 		'lines|n=i' => "B<TODO:> Catch error message and show only first n lines. Set this to 0 will disable this feature.",
