@@ -213,8 +213,10 @@ package makeless
 				next;
 			}
 
-			print "\e[0;32mremoving \e[1;35m$path\e[0m...\n";
-			file::remove_or_die($path);
+			if (-e $path) {
+				print "\e[0;32mremoving \e[1;35m$path\e[0m...\n";
+				file::remove_or_die($path);
+			}
 			database::update_file($path);
 		}
 
