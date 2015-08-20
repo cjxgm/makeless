@@ -504,7 +504,7 @@ package settings
 		my ($path, $symbol, @keys) = @_;
 		my %result = map { $_ => {} } @keys;
 
-		open my $file, '<', $path or die "$path: $!";
+		open my $file, '<', $path or die "\e[0;31m$path: \e[1;31mfailed to read settings: \e[0;31m$!\e[0m\n";
 		for (<$file>) {
 			next unless m{//\s+ml:(\w+)\s*\Q$symbol\E\s*(.*)};
 
