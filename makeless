@@ -44,6 +44,7 @@ sub main
 		$db->{prefix} = $prefix;
 	}
 	file::mkdir_or_die($db->{prefix});
+	$db->{prefix} = file::normalize_path($db->{prefix});
 
 	# setup output path
 	my $default_output = '/tmp/makeless-build';
@@ -494,9 +495,13 @@ package file
 
 	sub source_to_object
 	{
+		use File::Basename qw(dirname);
+
 		my $path = shift;
 		return undef unless $path =~ s{\.cc$}{.o};
-		$path;
+		$path = "$database::db->{prefix}/$path";
+		file::mkdir_or_die(dirname($path));
+		normalize_path($path);
 	}
 
 	sub source_to_binary
