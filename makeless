@@ -192,17 +192,30 @@ package makeless
 	{
 		my ($level) = @_;
 
-		for (sort keys %{$database::db->{files}}) {
-			next unless file::is_object($_);
+		# clean objects
+		for my $path (sort keys %{$database::db->{files}}) {
+			next unless file::is_object($path);
 
-			if ($level < 3 && database::file_modified($_)) {
-				print "\e[0;35mskipping \e[1;35m$_\e[0m...\n";
+			if ($level < 2 && database::file_modified($path)) {
+				print "\e[0;35mskipping \e[1;35m$path\e[0m...\n";
 				next;
 			}
 
-			print "\e[0;32mremoving \e[1;35m$_\e[0m...\n";
-			file::remove_or_die($_);
-			database::update_file($_);
+			print "\e[0;32mremoving \e[1;35m$path\e[0m...\n";
+			file::remove_or_die($path);
+			database::update_file($path);
+		}
+
+		return if $level < 3;
+
+		# clean targets
+		for (sort keys %{$database::db->{targets}}) {
+			my $path = $database::db->{targets}{$_}{path};
+			if (-e $path) {
+				print "\e[0;32mremoving \e[1;35m$path\e[0m...\n";
+				file::remove_or_die($path);
+			}
+			delete $database::db->{targets}{$_};
 		}
 	}
 }
@@ -526,7 +539,7 @@ package file
 	sub remove
 	{
 		my ($path) = @_;
-		die "TODO: remove dir" if -d $path;
+		return $path if -d $path;
 		unlink $path;
 	}
 
@@ -600,8 +613,8 @@ package options
 		'no-execute|x' => "Do not execute the built binary.",
 		'clean|c+' => "Clean the built."
 					. " B<Level 1> cleans all the object files;"
-					. " B<Level 2> removes the linked binary as well;"
-					. " B<Level 3> skips no file.",
+					. " B<Level 3> skips no file;"
+					. " B<Level 2> removes the linked binary as well.",
 		'lines|n=i' => "B<TODO:> Catch error message and show only first n lines. Set this to 0 will disable this feature.",
 		'output-from-trigger|t+' => "Deduce default output filename from triggers (i.e. F<source-file>)."
 					. " Repeat I<n> times to use the I<n>th trigger.",
