@@ -172,6 +172,7 @@ package makeless
 
         print "\e[0;32mrunning \e[1;35m$path\e[0;32m by \e[0;35m$cmd\e[0m...\n";
         $ENV{bin} = $rpath;
+        $ENV{src} = join(' ', @{$database::db->{triggers}});
         system $cmd;
 
         die "\e[0;31m$path: \e[1;31mfailed to execute: \e[0;31m$!\e[0m\n" if $? == -1;
