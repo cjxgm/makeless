@@ -64,8 +64,11 @@ sub main
     my $output = file::normalize_path($options->{output} || $default_output);
     $output .= '.bin' while -d $output;
 
-    makeless::build($output, $options->{'no-execute'},
-        $options->{'show-command'}, $options->{'lines'} || 0);
+    makeless::build($output,
+        $options->{'no-execute'},
+        $options->{'show-command'},
+        $options->{'show-dirty'},
+		$options->{'lines'} || 0);
 }
 
 # everything about directing a build.
@@ -74,7 +77,7 @@ package makeless
 {
     sub build
     {
-        my ($output, $no_exec, $show_cmd, $nline) = @_;
+        my ($output, $no_exec, $show_cmd, $show_dirty, $nline) = @_;
         my $triggers = $database::db->{triggers};
         my $dirty = $database::db->{dirty};
         my $dirty_bin = $database::db->{dirty_bin};
@@ -123,7 +126,9 @@ package makeless
         }
 
         # rebuild them
-        print "\e[0;35mdirty: \e[1;35m$_\e[0m\n" for (sort keys %$dirty);
+        if ($show_dirty) {
+            print "\e[0;35mdirty: \e[1;35m$_\e[0m\n" for (sort keys %$dirty);
+        }
         database::build_dirty($show_cmd, $nline, @files);
 
         # dirty status of the binary
@@ -133,7 +138,9 @@ package makeless
         $dirty_bin->{$key} = undef if database::target_modified($output, @objects);
 
         # linking
-        print "\e[0;35mdirty binary: \e[1;35m$_\e[0m\n" for (sort keys %$dirty_bin);
+        if ($show_dirty) {
+            print "\e[0;35mdirty binary: \e[1;35m$_\e[0m\n" for (sort keys %$dirty_bin);
+        }
         if (exists $dirty_bin->{$key}) {
             &link($show_cmd, $nline, $output, @objects);
             database::update_target($output, @objects);
