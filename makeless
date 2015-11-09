@@ -30,8 +30,6 @@ sub main
         $db->{debug} = $opt_debug;
     }
     exit if $options->{clean};
-    my $nline = $options->{lines};
-    $nline = 5 unless defined $nline;
 
     # process input files
     my @files;
@@ -66,7 +64,8 @@ sub main
     my $output = file::normalize_path($options->{output} || $default_output);
     $output .= '.bin' while -d $output;
 
-    makeless::build($output, $options->{'no-execute'}, $options->{'show-command'}, $nline);
+    makeless::build($output, $options->{'no-execute'},
+        $options->{'show-command'}, $options->{'lines'} || 0);
 }
 
 # everything about directing a build.
@@ -680,7 +679,7 @@ package options
                     . " B<Level 1> cleans all the object files;"
                     . " B<Level 2> skips no file;"
                     . " B<Level 3> removes the linked binary as well.",
-        'lines|n=i' => "B<TODO:> Catch error message and show only first n lines. Set this to 0 will disable this feature.",
+        'lines|n=i' => "Catch error message and show only first n lines.",
         'output-from-trigger|t+' => "Deduce default output filename from triggers (i.e. F<source-file>)."
                     . " Repeat I<n> times to use the I<n>th trigger.",
         'show-command|S' => "Show the compiling command and linking command.",
