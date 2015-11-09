@@ -64,7 +64,8 @@ sub main
     my $output = file::normalize_path($options->{output} || $default_output);
     $output .= '.bin' while -d $output;
 
-    makeless::build($output, $options->{'no-execute'}, $options->{'show-command'});
+    makeless::build($output, $options->{'no-execute'},
+        $options->{'show-command'}, $options->{'lines'} || 0);
 }
 
 # everything about directing a build.
@@ -73,7 +74,7 @@ package makeless
 {
     sub build
     {
-        my ($output, $no_exec, $show_cmd) = @_;
+        my ($output, $no_exec, $show_cmd, $nline) = @_;
         my $triggers = $database::db->{triggers};
         my $dirty = $database::db->{dirty};
         my $dirty_bin = $database::db->{dirty_bin};
@@ -94,6 +95,7 @@ package makeless
 
             @tmp_triggers = map { file::normalize_path($_) } @{$ss->{trg}};
             @basic_flags = (
+                "-fcolor-diagnostics",
                 "-std=" . ($ss->{std}[0] || 'gnu++14'),
                 "-O" . ($ss->{opt}[0] || '3'),
             );
@@ -122,7 +124,7 @@ package makeless
 
         # rebuild them
         print "\e[0;35mdirty: \e[1;35m$_\e[0m\n" for (sort keys %$dirty);
-        database::build_dirty($show_cmd, @files);
+        database::build_dirty($show_cmd, $nline, @files);
 
         # dirty status of the binary
         my @objects = grep defined, map { file::source_to_object($_) } @files;
@@ -133,7 +135,7 @@ package makeless
         # linking
         print "\e[0;35mdirty binary: \e[1;35m$_\e[0m\n" for (sort keys %$dirty_bin);
         if (exists $dirty_bin->{$key}) {
-            &link($show_cmd, $output, @objects);
+            &link($show_cmd, $nline, $output, @objects);
             database::update_target($output, @objects);
             delete $dirty_bin->{$key};
         }
@@ -144,27 +146,28 @@ package makeless
 
     sub compile
     {
-        my ($show_cmd, $path) = @_;
+        my ($show_cmd, $nline, $path) = @_;
         my $cc = $database::db->{cc};
         my $obj = file::source_to_object($path);
         my @args = (@{$database::db->{cc_flags}}, '-c', '-o', $obj, $path);
 
         print "\e[0;32mcompiling \e[1;35m$path\e[0m...\n";
         print join(' ', $cc, @args), "\n" if $show_cmd;
-        system $cc, @args and die "\e[0;31m$path: \e[1;31mfailed to compile.\e[0m\n";
+        spawn_limiting_stderr($nline, $cc, @args) and die "\e[0;31m$path: \e[1;31mfailed to compile.\e[0m\n";
         $obj;
     }
 
     sub link
     {
         my $show_cmd = shift;
+        my $nline = shift;
         my $output = shift;
         my $cc = $database::db->{cc};
         my @args = (@{$database::db->{ld_flags}}, '-o', $output, @_);
 
         print "\e[0;32mlinking \e[1;35m$output \e[0;32mfrom \e[0;35m", join(' ', @_), "\e[0m...\n";
         print join(' ', $cc, @args), "\n" if $show_cmd;
-        system $cc, @args and die "\e[0;31m$output: \e[1;31mfailed to link.\e[0m\n";
+        spawn_limiting_stderr($nline, $cc, @args) and die "\e[0;31m$output: \e[1;31mfailed to link.\e[0m\n";
         $output;
     }
 
@@ -239,6 +242,25 @@ package makeless
             }
             delete $database::db->{targets}{$_};
         }
+    }
+
+    # same as "system", but limit the stderr to at most $nline lines
+    sub spawn_limiting_stderr
+    {
+        my ($nline, @cmd) = @_;
+        return system(@cmd) unless $nline > 0;
+
+        use IPC::Open3;
+        use Symbol qw(gensym);
+
+        my $out = gensym();
+        my $pid = open3(undef, undef, $out, @cmd);
+        for (<$out>) {
+            last unless $nline--;
+            print STDERR;
+        }
+        waitpid $pid, 0;
+        $?;
     }
 }
 
@@ -420,6 +442,7 @@ package database
     sub build_dirty
     {
         my $show_cmd = shift;
+        my $nline = shift;
         my $dirty = $db->{dirty};
         for (@_) {
             next unless exists $dirty->{$_};
@@ -431,7 +454,7 @@ package database
             }
 
             # source -> object
-            my $obj = makeless::compile($show_cmd, $_);
+            my $obj = makeless::compile($show_cmd, $nline, $_);
             update_file($obj);
             delete $dirty->{$_};
         }
@@ -656,7 +679,7 @@ package options
                     . " B<Level 1> cleans all the object files;"
                     . " B<Level 2> skips no file;"
                     . " B<Level 3> removes the linked binary as well.",
-        'lines|n=i' => "B<TODO:> Catch error message and show only first n lines. Set this to 0 will disable this feature.",
+        'lines|n=i' => "Catch error message and show only first n lines.",
         'output-from-trigger|t+' => "Deduce default output filename from triggers (i.e. F<source-file>)."
                     . " Repeat I<n> times to use the I<n>th trigger.",
         'show-command|C' => "Show the compiling command and linking command.",
