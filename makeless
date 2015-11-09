@@ -94,6 +94,7 @@ package makeless
 
             @tmp_triggers = map { file::normalize_path($_) } @{$ss->{trg}};
             @basic_flags = (
+                "-fcolor-diagnostics",
                 "-std=" . ($ss->{std}[0] || 'gnu++14'),
                 "-O" . ($ss->{opt}[0] || '3'),
             );
