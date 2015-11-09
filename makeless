@@ -659,7 +659,8 @@ package options
         'lines|n=i' => "B<TODO:> Catch error message and show only first n lines. Set this to 0 will disable this feature.",
         'output-from-trigger|t+' => "Deduce default output filename from triggers (i.e. F<source-file>)."
                     . " Repeat I<n> times to use the I<n>th trigger.",
-        'show-command|S' => "Show the compiling command and linking command.",
+        'show-command|C' => "Show the compiling command and linking command.",
+        'show-dirty|D' => "Show which file is dirty. Dirty files are going to be rebuilt.",
         'shared-library|s' => "B<TODO:> Link to shared object/library instead of executable.",
         'project|P' => "B<FIXME:> Not very clear what I should do with this.",
     );
