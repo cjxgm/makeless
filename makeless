@@ -68,7 +68,7 @@ sub main
         $options->{'no-execute'},
         $options->{'show-command'},
         $options->{'show-dirty'},
-		$options->{'lines'} || 0);
+        $options->{'lines'} || 0);
 }
 
 # everything about directing a build.
@@ -159,7 +159,7 @@ package makeless
         my @args = (@{$database::db->{cc_flags}}, '-c', '-o', $obj, $path);
 
         print "\e[0;32mcompiling \e[1;35m$path\e[0m...\n";
-        print join(' ', $cc, @args), "\n" if $show_cmd;
+        print "\e[0;35m", join(' ', $cc, @args), "\e[0m\n" if $show_cmd;
         spawn_limiting_stderr($nline, $cc, @args) and die "\e[0;31m$path: \e[1;31mfailed to compile.\e[0m\n";
         $obj;
     }
@@ -173,7 +173,7 @@ package makeless
         my @args = (@{$database::db->{ld_flags}}, '-o', $output, @_);
 
         print "\e[0;32mlinking \e[1;35m$output \e[0;32mfrom \e[0;35m", join(' ', @_), "\e[0m...\n";
-        print join(' ', $cc, @args), "\n" if $show_cmd;
+        print "\e[0;35m", join(' ', $cc, @args), "\e[0m\n" if $show_cmd;
         spawn_limiting_stderr($nline, $cc, @args) and die "\e[0;31m$output: \e[1;31mfailed to link.\e[0m\n";
         $output;
     }
