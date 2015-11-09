@@ -1,5 +1,6 @@
 #include "hello.hh"
 #include "world.hh"
+#include <iostream>
 // ml:opt = 3
 // ml:std = c++14
 // ml:ccf += -pthread
@@ -8,11 +9,12 @@
 
 int bar()
 {
-	return pi<int>;
+    return pi<int>;
 }
 
 int main()
 {
-	return foo();
+    std::cerr << bar;
+    return foo();
 }
 
