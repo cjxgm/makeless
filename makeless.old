@@ -1,0 +1,879 @@
+#!/usr/bin/perl
+use utf8;
+use strict;
+use warnings;
+$" = ' ';
+
+# COMMON ABBREVIATIONS
+#
+# npath    normalized path
+# db       database instance
+#
+
+sub main
+{
+    my $options = options::parse();
+    my $db_guard = database->guard();
+    my $db = $database::db;
+
+    # clean up
+    makeless::clean($options->{clean}) if $options->{clean};
+
+    # process options
+    if ($options->{reset}) {
+        database::reset();
+        exit;
+    }
+    my $opt_debug = $options->{debug} || 0;
+    if ($db->{debug} != $opt_debug) {
+        database::reset_files();
+        $db->{debug} = $opt_debug;
+    }
+    exit if $options->{clean};
+
+    # process input files
+    my @files;
+    if (@ARGV) {
+        @files = map { file::normalize_path($_) } @ARGV;
+        $db->{triggers} = \@files;
+    }
+    die "\e[0;31mno triggers: \e[1;31msource-file is required on first run.\e[0m\n"
+        unless exists $db->{triggers};
+
+    # setup default prefix
+    $db->{prefix} = $options->{prefix} if $options->{prefix};
+    unless ($db->{prefix}) {
+        my $prefix = "/tmp/build";
+        $prefix .= ".tmp" while -e $prefix && not -d $prefix;
+        $db->{prefix} = $prefix;
+    }
+    file::mkdir_or_die($db->{prefix});
+    $db->{prefix} = file::normalize_path($db->{prefix});
+
+    # setup output path
+    my $default_output = '/tmp/makeless-build';
+    if (defined $options->{"output-from-trigger"}) {
+        my $t = $options->{"output-from-trigger"} - 1;
+        my $triggers = $db->{triggers};
+        my $nt = $#$triggers;
+        die "\e[0;31m$t > $nt: \e[1;31mno enough triggers.\e[0m\n" if $t > $nt;
+        my $p = file::source_to_binary($triggers->[$t]);
+        die "WTF?" unless $p;
+        $default_output = $p;
+    }
+    my $output = file::normalize_path($options->{output} || $default_output);
+    $output .= '.bin' while -d $output;
+
+    makeless::build($output,
+        $options->{'no-execute'},
+        $options->{'show-command'},
+        $options->{'show-dirty'},
+        $options->{'lines'} || 0);
+}
+
+# everything about directing a build.
+# build, compile, link, and execute.
+package makeless
+{
+    sub build
+    {
+        my ($output, $no_exec, $show_cmd, $show_dirty, $nline) = @_;
+        my $triggers = $database::db->{triggers};
+        my $dirty = $database::db->{dirty};
+        my $dirty_bin = $database::db->{dirty_bin};
+
+        my @basic_flags;
+        my @tmp_triggers;
+        my $cmd;
+        {
+            my $ss = settings::parse($triggers->[0], '=', qw(std opt run trg));
+
+            my $nstd = @{$ss->{std}};
+            die "\e[0;31m$nstd > 1: \e[1;31mthere can only be at most one standard.\e[0m\n"
+                if $nstd > 1;
+            my $std = $ss->{std}[0];
+            $std = 'gnu++14' unless defined $std;
+
+            my $nopt = @{$ss->{opt}};
+            die "\e[0;31m$nopt > 1: \e[1;31mthere can only be at most one optimizing level.\e[0m\n"
+                if $nopt > 1;
+            my $opt = $ss->{opt}[0];
+            $opt = '3' unless defined $opt;
+
+            @tmp_triggers = map { file::normalize_path($_) } @{$ss->{trg}};
+            @basic_flags = (
+                "-fcolor-diagnostics",
+                "-std=$std",
+                "-O$opt",
+            );
+            $database::db->{basic_flags} = \@basic_flags;
+
+            $cmd = join(' ', @{$ss->{run}}) || "\$bin";
+        }
+
+        my $merge_array = sub { sort keys %{{ map { $_ => undef } @_ }} };
+
+        # find all dirty files
+        # dirty status of all sources and headers
+        my %pending;
+        @pending{keys %{database::mark_dirty($_, \%pending)}} = ()
+            for $merge_array->(@$triggers, @tmp_triggers);
+        my @files = sort keys %pending;
+        my $bin_dirty = %$dirty;
+
+        {
+            my $ss = {};
+            settings::merge($ss, $database::db->{files}{$_}{settings}) for @files;
+            settings::merge($ss);
+            $database::db->{cc_flags} = [@basic_flags, @{$ss->{ccf}}];
+            $database::db->{ld_flags} = [@basic_flags, @{$ss->{ldf}}];  # TODO is -std=??? needed in linker flags?
+        }
+
+        # rebuild them
+        if ($show_dirty) {
+            print "\e[0;35mdirty: \e[1;35m$_\e[0m\n" for (sort keys %$dirty);
+        }
+        database::build_dirty($show_cmd, $nline, @files);
+
+        # dirty status of the binary
+        my @objects = grep defined, map { file::source_to_object($_) } @files;
+        my $key = database::_stringify_objects($output, @objects);
+        $dirty_bin->{$key} = undef if $bin_dirty;
+        $dirty_bin->{$key} = undef if database::target_modified($output, @objects);
+
+        # linking
+        if ($show_dirty) {
+            print "\e[0;35mdirty binary: \e[1;35m$_\e[0m\n" for (sort keys %$dirty_bin);
+        }
+        if (exists $dirty_bin->{$key}) {
+            &link($show_cmd, $nline, $output, @objects);
+            database::update_target($output, @objects);
+            delete $dirty_bin->{$key};
+        }
+
+        return if $no_exec;
+        makeless::execute($cmd, $output);
+    }
+
+    sub compile
+    {
+        my ($show_cmd, $nline, $path) = @_;
+        my $cc = $database::db->{cc};
+        my $obj = file::source_to_object($path);
+        my @args = (@{$database::db->{cc_flags}}, '-c', '-o', $obj, $path);
+
+        print "\e[0;32mcompiling \e[1;35m$path\e[0m...\n";
+        print "\e[0;35m", join(' ', $cc, @args), "\e[0m\n" if $show_cmd;
+        spawn_limiting_stderr($nline, $cc, @args) and die "\e[0;31m$path: \e[1;31mfailed to compile.\e[0m\n";
+        $obj;
+    }
+
+    sub link
+    {
+        my $show_cmd = shift;
+        my $nline = shift;
+        my $output = shift;
+        my $cc = $database::db->{cc};
+        my @args = (@{$database::db->{ld_flags}}, '-o', $output, @_);
+
+        print "\e[0;32mlinking \e[1;35m$output \e[0;32mfrom \e[0;35m", join(' ', @_), "\e[0m...\n";
+        print "\e[0;35m", join(' ', $cc, @args), "\e[0m\n" if $show_cmd;
+        spawn_limiting_stderr($nline, $cc, @args) and die "\e[0;31m$output: \e[1;31mfailed to link.\e[0m\n";
+        $output;
+    }
+
+    sub execute
+    {
+        my ($cmd, $path) = @_;
+        my $rpath = file::real_path($path);
+
+        print "\e[0;32mrunning \e[1;35m$path\e[0;32m by \e[0;35m$cmd\e[0m...\n";
+        $ENV{bin} = $rpath;
+        $ENV{src} = join(' ', @{$database::db->{triggers}});
+        system $cmd;
+
+        die "\e[0;31m$path: \e[1;31mfailed to execute: \e[0;31m$!\e[0m\n" if $? == -1;
+        die "\e[0;31m$path: \e[1;31mdied with signal \e[0m[\e[1;31m"
+            . ($? & 0b0111_1111) . "\e[0m]"
+            . ($? & 0b1000_0000 ? " \e[0;33mcoredumped" : '') . "\e[0m\n"
+            if $? & 0b0111_1111;
+        print "\e[0;34mprogram \e[1;35m$path \e[0;34mreturned \e[0m[\e[1;31m", $? >> 8, "\e[0m]\n";
+    }
+
+    sub pkg_config
+    {
+        my ($type, @libs) = @_;
+        my @args = ("--$type", @libs);
+        my @flags;
+
+        use IPC::Open2;
+        my $pid = open2(my $out, undef, 'pkg-config', @args);
+        for (<$out>) {
+            chomp;
+            while ($_ =~ m{(\\.|[^\\\s])+}g) {
+                my $flag = $&;
+                $flag =~ s{\\(.)}{$1}g;
+                push @flags, $flag;
+            }
+        }
+        waitpid $pid, 0;
+        die "\e[0;31m@_: \e[1;31mfailed to process library for $type.\e[0m\n" if $?;
+
+        @flags;
+    }
+
+    sub clean
+    {
+        my ($level) = @_;
+
+        # clean objects
+        for my $path (sort keys %{$database::db->{files}}) {
+            next unless file::is_object($path);
+
+            if ($level < 2 && database::file_modified($path)) {
+                print "\e[0;35mskipping \e[1;35m$path\e[0m...\n";
+                next;
+            }
+
+            if (-e $path) {
+                print "\e[0;32mremoving \e[1;35m$path\e[0m...\n";
+                file::remove_or_die($path);
+            }
+            database::update_file($path);
+        }
+
+        return if $level < 3;
+
+        # clean targets
+        for (sort keys %{$database::db->{targets}}) {
+            my $path = $database::db->{targets}{$_}{path};
+            if (-e $path) {
+                print "\e[0;32mremoving \e[1;35m$path\e[0m...\n";
+                file::remove_or_die($path);
+            }
+            delete $database::db->{targets}{$_};
+        }
+    }
+
+    # same as "system", but limit the stderr to at most $nline lines
+    sub spawn_limiting_stderr
+    {
+        my ($nline, @cmd) = @_;
+        return system(@cmd) unless $nline > 0;
+
+        use IPC::Open3;
+        use Symbol qw(gensym);
+
+        my $out = gensym();
+        my $pid = open3(undef, undef, $out, @cmd);
+        for (<$out>) {
+            last unless $nline--;
+            print STDERR;
+        }
+        waitpid $pid, 0;
+        $?;
+    }
+}
+
+# hold an instance of raii::db, and provides various query functions.
+package database
+{
+    our $db;
+    our $db_path = ".makeless.db";
+
+    my $defaults = {
+        debug => 0, # 0: no; 1: dump database; 2: 1 with base64 digest
+        files => {},
+        depss => {},
+        dirty => {},
+        dirty_bin => {},
+        targets => {},
+        cc => "clang++",
+    };
+
+    sub guard
+    {
+        $db = raii::db->new($db_path);
+        &default();
+        bless {}, shift;
+    }
+
+    sub DESTROY { undef $db }
+
+    sub default
+    {
+        my $db = shift || $database::db;
+        my $dvals = shift || $defaults;
+        for (keys %$dvals) {
+            $db->{$_} = $dvals->{$_} unless exists $db->{$_};
+            &default($db->{$_}, $dvals->{$_}) if ref($db->{$_}) eq 'HASH'
+        }
+        $db;
+    }
+
+    sub reset { $db->reset() }
+    sub reset_files { $db->{files} = {} }
+    sub reset_dirty { $db->{dirty} = {} }
+
+    sub update_file
+    {
+        my $npath = shift;
+        die "is your brain made out of water?" if -d $npath;
+
+        if (-e $npath) {
+            my $ss = settings::parse($npath, '+=', qw(lib ccf ldf));
+            my $lib = $ss->{lib};
+            if (@$lib) {
+                push @{$ss->{ccf}}, makeless::pkg_config('cflags', @$lib);
+                push @{$ss->{ldf}}, makeless::pkg_config(  'libs', @$lib);
+            }
+            delete $ss->{lib};
+
+            $db->{files}{$npath} = {
+                digest => file::digest($npath),
+                modified_time => file::modified_time($npath),
+                settings => $ss,
+            };
+        }
+        else { delete $db->{files}{$npath} }
+    }
+
+    sub update_deps
+    {
+        my $npath = shift;
+        die "is your brain made out of water?" if -d $npath;
+        $db->{depss}{$npath} = _dependencies($npath);
+    }
+
+    sub update_target
+    {
+        my $npath = $_[0];
+        my $key = _stringify_objects(@_);
+        die "is your brain made out of water?" if -d $npath;
+
+        if (-e $npath) {
+            $db->{targets}{$key} = {
+                digest => file::digest($npath),
+                modified_time => file::modified_time($npath),
+                path => $npath,
+            };
+        }
+        else { delete $db->{targets}{$key} }
+    }
+
+    sub target_modified
+    {
+        my $key = _stringify_objects(@_);
+        return 1 unless exists $db->{targets}{$key};
+
+        my $target = $db->{targets}{$key};
+        return file_modified($target->{path}, $target);
+    }
+
+    sub file_modified
+    {
+        my $npath = shift;
+        my $info = shift;
+
+        # file not exist is considered modified
+        return 1 unless -e $npath;
+
+        unless ($info) {
+            # file is assumed to be modified if not recorded in the db.
+            # this is for the "first-time" situation.
+            return 1 unless exists $db->{files}{$npath};
+            $info = $db->{files}{$npath};
+        }
+
+        # definitely not modified if modified_time unchanged.
+        my $time = $info->{modified_time} || 0;
+        my $ftime = file::modified_time($npath);
+        return 0 if $ftime == $time;
+
+        # definitely modified if digest changed.
+        # TODO: ignore spaces?
+        my $digest = $info->{digest} || '';
+        my $fdigest = file::digest($npath);
+        return 1 if $fdigest ne $digest;
+
+        # assume not modified.
+        # TODO: file content comparison to avoid hash collision?
+        #       md5 is pretty good hash function,
+        #       so assume collision won't happen for now.
+        0;
+    }
+
+    sub mark_dirty
+    {
+        my $npath = shift || return;
+        my $pending = shift || {};
+        my $dirty = $db->{dirty};
+
+        return $pending if exists $pending->{$npath};
+        $pending->{$npath} = undef;
+
+        delete $dirty->{$npath};
+
+        # header
+        if (file::is_header($npath)) {
+            return unless file_modified($npath);
+            update_file($npath);
+            $dirty->{$npath} = undef;
+            return;
+        }
+
+        # source
+        if (file_modified($npath)) {
+            update_file($npath);
+            update_deps($npath);
+            $dirty->{$npath} = undef;
+        }
+
+        # object
+        # TODO: better logic on this?
+        my $obj = file::source_to_object($npath);
+        if (file_modified($obj)) {
+            update_file($obj);
+            $dirty->{$npath} = undef;
+        }
+
+        # dependencies
+        for my $dep (@{$db->{depss}{$npath}}) {
+            # header
+            mark_dirty($dep, $pending);
+            $dirty->{$npath} = undef if exists $dirty->{$dep};
+
+            # source
+            mark_dirty(file::header_to_source($dep), $pending);
+        }
+
+        $pending;
+    }
+
+    sub build_dirty
+    {
+        my $show_cmd = shift;
+        my $nline = shift;
+        my $dirty = $db->{dirty};
+        for (@_) {
+            next unless exists $dirty->{$_};
+
+            # header
+            if (file::is_header($_)) {
+                delete $dirty->{$_};
+                next;
+            }
+
+            # source -> object
+            my $obj = makeless::compile($show_cmd, $nline, $_);
+            update_file($obj);
+            delete $dirty->{$_};
+        }
+    }
+
+    # fetch dependencies from compiler
+    sub _dependencies
+    {
+        my $path = shift;
+        my $cc = $db->{cc};
+        my @args = (@{$db->{basic_flags}}, '-MM', $path);
+
+        use IPC::Open2;
+        my $pid = open2(my $out, undef, $cc, @args);
+        my @deps;
+        for (<$out>) {
+            chomp;
+            s{\s*\\\s*$}{}g;
+            while ($_ =~ m{(\\.|[^\\\s])+}g) {
+                my $path = $&;
+                $path =~ s{\\(.)}{$1}g;
+                push @deps, file::normalize_path($path);
+            }
+        }
+        waitpid $pid, 0;
+        die "\e[0;31m$path: \e[1;31mcannot obtain dependencies.\e[0m\n" if $?;
+        @deps = @deps[2 .. $#deps];
+        return \@deps;
+    }
+
+    sub _stringify_objects
+    {
+        join(' ', map { s{[\\ ]}{\\$&}g; $_ } @_);
+    }
+}
+
+# filesystem and file path related functions
+package file
+{
+    sub modified_time
+    {
+        my $npath = shift;
+        (stat $npath)[9];
+    }
+
+    sub digest
+    {
+        my $npath = shift;
+        if ($database::db->{debug} > 1) {
+            use Digest::file qw(digest_file_base64);
+            digest_file_base64($npath, "MD5");
+        }
+        else {
+            use Digest::file qw(digest_file);
+            digest_file($npath, "MD5");
+        }
+    }
+
+    sub mkdir
+    {
+        my ($path) = @_;
+
+        use File::Path qw(make_path);
+        make_path($path, { error => \my $err });
+        return $path unless @$err;
+        undef;
+    }
+
+    sub mkdir_or_die
+    {
+        my ($path) = @_;
+        file::mkdir($path) or die "\e[0;31m$path \e[1;31mfailed to mkdir for prefix: \e[0;31m$!\e[0m\n";
+    }
+
+    # Normalize a relative path to another relative path (relative to cwd)
+    # and a absolute path to another absolute path
+    # that is consistent enough for comparison and
+    # identifting the same file (can be used as hash keys).
+    #
+    # EXAMPLES:
+    #   ./a/b/../c/ => a/c
+    #   ../a/b/../../../c => ../../c
+    #   ../makeless/a => a              # if cwd is     called "makeless"
+    #   ../makeless/a => ../makeless/a  # if cwd is NOT called "makeless"
+    #
+    # This function does physically walking in the filesystem
+    # and expands symbolic links.
+    #
+    # return undef if file not exist.
+    sub normalize_path
+    {
+        my $path = shift;
+
+        my $rpath = real_path($path);
+        return undef unless defined $rpath;
+        return $rpath if $path =~ m{^/};
+
+        use File::Spec::Functions qw(abs2rel);
+        abs2rel($rpath);
+    }
+
+    sub real_path
+    {
+        use Cwd qw(abs_path);
+        abs_path(shift);
+    }
+
+    sub source_to_object
+    {
+        use File::Basename qw(dirname);
+
+        my $path = shift;
+        return undef unless $path =~ s{\.cc$}{.o};
+        $path = "$database::db->{prefix}/$path";
+        file::mkdir_or_die(dirname($path));
+        normalize_path($path);
+    }
+
+    sub source_to_binary
+    {
+        my $path = shift;
+        return undef unless $path =~ s{\.cc$}{};
+        $path;
+    }
+
+    sub is_header
+    {
+        my $path = shift;
+        return undef unless $path =~ m{\.(hh|inl)$};
+        $path;
+    }
+
+    sub is_object
+    {
+        my $path = shift;
+        return undef unless $path =~ m{\.o$};
+        $path;
+    }
+
+    sub header_to_source
+    {
+        my $path = shift;
+        return undef unless $path =~ s{\.(hh|inl)$}{.cc};
+        return undef unless -e $path;
+        $path;
+    }
+
+    sub remove
+    {
+        my ($path) = @_;
+        die "TODO: remove empty dir" if -d $path;
+        unlink $path;
+    }
+
+    sub remove_or_die
+    {
+        my ($path) = @_;
+        file::remove($path) or die "\e[0;31m$path: \e[1;31mfailed to remove \e[0;31m$!\e[0m\n";
+    }
+}
+
+# magic comment in source code and headers that can alter the
+# flags of compiler and/or linker
+package settings
+{
+    sub parse
+    {
+        my ($path, $symbol, @keys) = @_;
+        my %result = map { $_ => [] } @keys;
+
+        open my $file, '<', $path or die "\e[0;31m$path: \e[1;31mfailed to read settings: \e[0;31m$!\e[0m\n";
+        for (<$file>) {
+            next unless m{//\s+ml:(\w+)\s*\Q$symbol\E\s*(.*)};
+
+            die "\e[0;31m$path: \e[1;31msetting \e[0;33m$1\e[1;31m is not one of (\e[0;33m"
+                . join(' ', @keys)
+                . "\e[1;31m).\e[0m\n"
+                unless exists $result{$1};
+
+            @{$result{$1}} = @{_split_escaped($2)};
+        }
+        \%result;
+    }
+
+    sub merge
+    {
+        my ($dst, $src) = @_;
+
+        if (defined $src) { @{$dst->{$_}}{@{$src->{$_}}} = undef for keys %$src }
+        else { $_ = [ _array_from_set($_) ] for values %$dst }
+        $dst;
+    }
+
+    sub _split_escaped
+    {
+        local $_ = shift;
+        local @_;
+        push @_, $& while $_ =~ m{(\\.|[^\\\s])+}g;
+        s{\\(.)}{$1}g for @_;
+        \@_;
+    }
+
+    sub _array_from_set
+    {
+        sort keys %{$_[0]};
+    }
+}
+
+# command line arguments
+package options
+{
+    my %available = (
+        'help|h' => "Display this help and exit right away.",
+        'reset|r' => "Reset the database and exit, removing all the history cache and settings."
+                    . " The database file F<$database::db_path> will be removed.",
+        'debug|d+' => "Enable debugging."
+                    . " Will reset files (i.e. clear cache) when debug options changed from last time.",
+        'output|o=s' => "Set default output file for B<current> source.",
+        'prefix|p=s' => "Set build file prefix.",
+        'no-execute|x' => "Do not execute the built binary.",
+        'clean|c+' => "Clean the built."
+                    . " B<Level 1> cleans all the object files;"
+                    . " B<Level 2> skips no file;"
+                    . " B<Level 3> removes the linked binary as well.",
+        'lines|n=i' => "Catch error message and show only first n lines.",
+        'output-from-trigger|t+' => "Deduce default output filename from triggers (i.e. F<source-file>)."
+                    . " Repeat I<n> times to use the I<n>th trigger.",
+        'show-command|C' => "Show the compiling command and linking command.",
+        'show-dirty|D' => "Show which file is dirty. Dirty files are going to be rebuilt.",
+        'shared-library|s' => "B<TODO:> Link to shared object/library instead of executable.",
+        'project|P' => "B<FIXME:> Not very clear what I should do with this.",
+    );
+
+    sub parse
+    {
+        use Getopt::Long qw(:config gnu_getopt);
+
+        my $opts = {};
+        GetOptions($opts, keys %available) or die "\e[0;31mbad options: \e[1;31muse \e[0;33m-h\e[1;31m to show help.\e[0m\n";
+        help() if $opts->{help};
+        $opts;
+    }
+
+    sub help
+    {
+        my $exit_code = shift || 0;
+
+        my @lines;
+        push @lines, "=head1 NAME";
+        push @lines, "";
+        push @lines, "C<makeless>: config-free C++ build system";
+        push @lines, "";
+        push @lines, "=head1 SYNOPSIS";
+        push @lines, "";
+        push @lines, "B<makeless> [I<OPTIONS>] [F<source-file> [...]]";
+        push @lines, "";
+        push @lines, "B<ml> [I<OPTIONS>] [F<source-file> [...]]";
+        push @lines, "";
+        push @lines, "=head1 OPTIONS";
+        push @lines, "";
+        push @lines, "=over";
+        push @lines, "";
+        for my $k (sort keys %available) {
+            my $item = $k;
+            for ($item) {
+                s{\|}{ | -};
+                s{\+$}{, B<multiple leveled>};
+                s{=s$}{ I<string>} and s{ \|}{=I<string>$&};
+                s{=i$}{ I<integer>} and s{ \|}{=I<integer>$&};
+            }
+            push @lines, "=item --$item";
+            push @lines, "";
+            push @lines, $available{$k};
+            push @lines, "";
+        }
+        push @lines, "=back";
+        push @lines, "";
+        push @lines, "=head1 EXAMPLES";
+        push @lines, "";
+        push @lines, "=over";
+        push @lines, "";
+        push @lines, "=item B<ml> F<source.cc>";
+        push @lines, "";
+        push @lines, "Build F<source.cc> to F</tmp/makeless-build> (default output filename) and execute it.";
+        push @lines, "";
+        push @lines, "=item B<ml> I<-t> F<source.cc>";
+        push @lines, "";
+        push @lines, "Build F<source.cc> to F<source> (output filename deduced from the 1st trigger, a.k.a. F<source-file>, i.e. F<source.cc>) and execute it.";
+        push @lines, "";
+        push @lines, "=item B<ml> I<-x> F<source.cc>";
+        push @lines, "";
+        push @lines, "Build F<source.cc> to F</tmp/makeless-build> but do not execute it.";
+        push @lines, "";
+        push @lines, "=item B<ml> I<-tx> F<source.cc>";
+        push @lines, "";
+        push @lines, "Build F<source.cc> to F<source> but do not execute it.";
+        push @lines, "";
+        push @lines, "=item B<ml> I<-cccr>";
+        push @lines, "";
+        push @lines, "Clean everything up. Removes all object files, linked binaries/targets and makeless database F<$database::db_path>.";
+        push @lines, "";
+        push @lines, "=back";
+        push @lines, "";
+
+        use Pod::Text::Color;
+        my $p = Pod::Text::Color->new();
+        $p->parse_lines(@lines, undef);
+
+        exit $exit_code;
+    }
+}
+
+
+package raii::db
+{
+    use Storable qw(fd_retrieve store);
+    use Data::Dumper;
+    $Data::Dumper::Indent = 1;
+    $Data::Dumper::Useqq = 1;
+    $Data::Dumper::Quotekeys = 0;
+    $Data::Dumper::Sortkeys = 1;
+
+    my $config_key = '__raii::db::config';
+
+    sub new
+    {
+        my $class = shift;
+        my $path = shift;
+
+        my $db = _load($path);
+        bless($db, $class)->_config({ path => $path });
+    }
+
+    sub DESTROY
+    {
+        my $db = shift;
+        return $db->_remove() if $db->_config('reset');
+        $db->save();
+        print "\n\e[1;37m---- DUMP ----\e[0m\n", $db, "\n" if $db->{debug};
+    }
+
+    sub save
+    {
+        my $db = shift;
+        store($db->_curse(), $db->_config('path'));
+        $db;
+    }
+
+    sub reset
+    {
+        my $db = shift;
+        my $config = $db->_config();
+        $config->{reset} = 1;
+    }
+
+    sub reload
+    {
+        my $db = shift;
+        my $config = $db->_config();
+        %$db = %{ _load($db->_config('path')) };
+        $db->_config($config);
+    }
+
+    use overload '""' => \&stringify;
+    sub stringify
+    {
+        my $db = shift;
+        Data::Dumper->Dump([ $db->_curse() ], [ qw(db) ]);
+    }
+
+    sub _load
+    {
+        my $path = shift;
+        open my $file, '<', $path or return {};
+        fd_retrieve($file);
+    }
+
+    sub _curse
+    {
+        my $db = shift;
+        my $cursed = {%$db};
+        delete $cursed->{$config_key};
+        $cursed;
+    }
+
+    sub _config
+    {
+        my $db = shift;
+        my $key = shift;
+        if (ref($key) eq 'HASH') {
+            $db->{$config_key} = $key;
+            return $db;
+        }
+        return $db->{$config_key}{$key} if $key;
+        $db->{$config_key};
+    }
+
+    sub _remove
+    {
+        my $db = shift;
+        my $path = $db->_config('path');
+        print "\e[0;34mdatabase \e[0;35m$path\e[0;34m is reset.\e[0m\n"
+            if unlink $path;
+    }
+}
+
+package main
+{
+    main();
+}
+
