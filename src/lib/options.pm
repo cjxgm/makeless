@@ -21,7 +21,7 @@ my %available = (
                 . " B<Level 1> cleans all the object files;"
                 . " B<Level 2> skips no file;"
                 . " B<Level 3> removes the linked binary as well.",
-    'lines|n=i' => "Catch error message and show only first n lines.",
+    'lines|n=i' => "Catch error message and show only first I<integer> lines.",
     'output-from-trigger|t+' => "Deduce default output filename from triggers (i.e. F<source-file>)."
                 . " Repeat I<n> times to use the I<n>th trigger.",
     'show-command|C' => "Show the compiling command and linking command.",
@@ -63,7 +63,7 @@ sub help
         my $item = $k;
         for ($item) {
             s{\|}{ | -};
-            s{\+$}{, B<multiple leveled>};
+            s{\+$}{, B<multi-level>};
             s{=s$}{ I<string>} and s{ \|}{=I<string>$&};
             s{=i$}{ I<integer>} and s{ \|}{=I<integer>$&};
         }
