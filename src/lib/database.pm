@@ -177,7 +177,8 @@ sub mark_dirty
         $dirty->{$npath} = undef if exists $dirty->{$dep};
 
         # source
-        mark_dirty(file::header_to_source($dep), $pending);
+        my $sources = file::header_to_source($dep);
+        mark_dirty($_, $pending) for @$sources;
     }
 
     $pending;

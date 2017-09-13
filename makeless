@@ -185,7 +185,8 @@ $fatpacked{"database.pm"} = '#line '.(1+__LINE__).' "'.__FILE__."\"\n".<<'DATABA
           $dirty->{$npath} = undef if exists $dirty->{$dep};
   
           # source
-          mark_dirty(file::header_to_source($dep), $pending);
+          my $sources = file::header_to_source($dep);
+          mark_dirty($_, $pending) for @$sources;
       }
   
       $pending;
@@ -408,7 +409,7 @@ $fatpacked{"file.pm"} = '#line '.(1+__LINE__).' "'.__FILE__."\"\n".<<'FILE';
       use File::Basename qw(dirname);
   
       my $path = shift;
-      return undef unless $path =~ s{\.cc$}{.o};
+      return undef unless $path =~ s{\.(?:cc|cpp|cxx|c\+\+|C|c)$}{.o};
       $path = "$database::db->{prefix}/$path";
       file::mkdir_or_die(dirname($path));
       normalize_path($path);
@@ -417,14 +418,14 @@ $fatpacked{"file.pm"} = '#line '.(1+__LINE__).' "'.__FILE__."\"\n".<<'FILE';
   sub source_to_binary
   {
       my $path = shift;
-      return undef unless $path =~ s{\.cc$}{};
+      return undef unless $path =~ s{\.(?:cc|cpp|cxx|c\+\+|C|c)$}{};
       $path;
   }
   
   sub is_header
   {
       my $path = shift;
-      return undef unless $path =~ m{\.(hh|inl)$};
+      return undef unless $path =~ m{\.(?:hh|hpp|hxx|h\+\+|H|h|pull)$};
       $path;
   }
   
@@ -438,9 +439,11 @@ $fatpacked{"file.pm"} = '#line '.(1+__LINE__).' "'.__FILE__."\"\n".<<'FILE';
   sub header_to_source
   {
       my $path = shift;
-      return undef unless $path =~ s{\.(hh|inl)$}{.cc};
-      return undef unless -e $path;
-      $path;
+      my @sources;
+      if ($path =~ s{\.(?:hh|hpp|hxx|h\+\+|H|h|pull)$}{}) {
+          @sources = grep { -f } map { "$path.$_" } qw[cc cpp cxx c++ C c];
+      }
+      \@sources
   }
   
   sub remove

@@ -79,7 +79,7 @@ sub source_to_object
     use File::Basename qw(dirname);
 
     my $path = shift;
-    return undef unless $path =~ s{\.cc$}{.o};
+    return undef unless $path =~ s{\.(?:cc|cpp|cxx|c\+\+|C|c)$}{.o};
     $path = "$database::db->{prefix}/$path";
     file::mkdir_or_die(dirname($path));
     normalize_path($path);
@@ -88,14 +88,14 @@ sub source_to_object
 sub source_to_binary
 {
     my $path = shift;
-    return undef unless $path =~ s{\.cc$}{};
+    return undef unless $path =~ s{\.(?:cc|cpp|cxx|c\+\+|C|c)$}{};
     $path;
 }
 
 sub is_header
 {
     my $path = shift;
-    return undef unless $path =~ m{\.(hh|inl)$};
+    return undef unless $path =~ m{\.(?:hh|hpp|hxx|h\+\+|H|h|pull)$};
     $path;
 }
 
@@ -109,9 +109,11 @@ sub is_object
 sub header_to_source
 {
     my $path = shift;
-    return undef unless $path =~ s{\.(hh|inl)$}{.cc};
-    return undef unless -e $path;
-    $path;
+    my @sources;
+    if ($path =~ s{\.(?:hh|hpp|hxx|h\+\+|H|h|pull)$}{}) {
+        @sources = grep { -f } map { "$path.$_" } qw[cc cpp cxx c++ C c];
+    }
+    \@sources
 }
 
 sub remove
