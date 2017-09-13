@@ -28,7 +28,7 @@ sub build
         die "\e[0;31m$nstd > 1: \e[1;31mthere can only be at most one standard.\e[0m\n"
             if $nstd > 1;
         my $std = $ss->{std}[0];
-        $std = 'gnu++14' unless defined $std;
+        $std = 'c++14' unless defined $std;
 
         my $nopt = @{$ss->{opt}};
         die "\e[0;31m$nopt > 1: \e[1;31mthere can only be at most one optimizing level.\e[0m\n"
