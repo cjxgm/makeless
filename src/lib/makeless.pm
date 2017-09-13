@@ -62,7 +62,7 @@ sub build
         my $ss = {};
         settings::merge($ss, $database::db->{files}{$_}{settings}) for @files;
         settings::merge($ss);
-        $database::db->{cc_flags} = [@basic_flags, @{$ss->{ccf}}];
+        $database::db->{cc_flags} = [@basic_flags, @{$ss->{ccf}}, "-xc++"];
         $database::db->{ld_flags} = [@basic_flags, @{$ss->{ldf}}];  # TODO is -std=??? needed in linker flags?
     }
 
