@@ -22,7 +22,7 @@ sub build
     my @tmp_triggers;
     my $cmd;
     {
-        my $ss = settings::parse($triggers->[0], '=', qw(std opt run trg));
+        my $ss = settings::parse($triggers->[0], '=', qw(std opt run trg inc));
 
         my $nstd = @{$ss->{std}};
         die "\e[0;31m$nstd > 1: \e[1;31mthere can only be at most one standard.\e[0m\n"
@@ -41,6 +41,7 @@ sub build
             "-fcolor-diagnostics",
             "-std=$std",
             "-O$opt",
+            map { ("-isystem", $_) } @{$ss->{inc}},
         );
         $database::db->{basic_flags} = \@basic_flags;
 
